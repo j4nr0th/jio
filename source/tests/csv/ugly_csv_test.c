@@ -66,7 +66,7 @@ int main()
 
     {
         jio_memory_file csv_file;
-        jio_result res = jio_memory_file_create("../../csv_test_ugly.csv", &csv_file, 0, 0, 0);
+        jio_result res = jio_memory_file_create("csv_test_ugly.csv", &csv_file, 0, 0, 0);
         ASSERT(res == JIO_RESULT_SUCCESS);
         jio_csv_data* csv_data;
         res = jio_parse_csv(&csv_file, ",", true, true, &csv_data, allocator, lin_allocator);
@@ -93,7 +93,7 @@ int main()
     }
     {
         jio_memory_file csv_file;
-        jio_result res = jio_memory_file_create("../../csv_test_ugly2.csv", &csv_file, 0, 0, 0);
+        jio_result res = jio_memory_file_create("csv_test_ugly2.csv", &csv_file, 0, 0, 0);
         ASSERT(res == JIO_RESULT_SUCCESS);
         jio_csv_data* csv_data;
         res = jio_parse_csv(&csv_file, "( ͡° ͜ʖ ͡°)", true, true, &csv_data, allocator, lin_allocator);

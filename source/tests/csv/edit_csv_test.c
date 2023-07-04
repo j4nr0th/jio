@@ -85,7 +85,7 @@ int main()
     void* const base = lin_jalloc_get_current(lin_allocator);
 
     jio_memory_file csv_file;
-    jio_result res = jio_memory_file_create("../../csv_test_simple.csv", &csv_file, 0, 0, 0);
+    jio_result res = jio_memory_file_create("csv_test_simple.csv", &csv_file, 0, 0, 0);
     ASSERT(res == JIO_RESULT_SUCCESS);
 
     jio_csv_data* csv_data;

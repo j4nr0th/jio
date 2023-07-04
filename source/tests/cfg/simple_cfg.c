@@ -66,7 +66,7 @@ int main()
     JDM_ENTER_FUNCTION;
 
     jio_memory_file cfg_file;
-    jio_result res = jio_memory_file_create("../../ini_test_simple.ini", &cfg_file, 0, 0, 0);
+    jio_result res = jio_memory_file_create("ini_test_simple.ini", &cfg_file, 0, 0, 0);
     ASSERT(res == JIO_RESULT_SUCCESS);
 
     jio_cfg_section* root;
