@@ -890,7 +890,7 @@ jio_result jio_process_csv_exact(
             JDM_ERROR("Failed parsing row %u of CSV file \"%s\", reason: %s", row_count + 1, mem_file->name, jio_result_to_str(res));
             goto end;
         }
-        for (uint32_t i = 0; i < column_count; ++i)
+        for (uint32_t i = 0; row_count && i < column_count; ++i)
         {
             if (!converter_array[i](segments + i, param_array[i]))
             {
