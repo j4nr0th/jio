@@ -867,7 +867,7 @@ jio_result jio_process_csv_exact(
     {
         const uint32_t real_column_count = count_row_entries(
                 row_begin, row_end ?: mem_file->ptr + mem_file->file_size, separator, sep_len);
-        if (real_column_count == column_count)
+        if (real_column_count != column_count)
         {
             JDM_ERROR("Csv file has %"PRIu32" columns, but %"PRIu32" were specified", real_column_count, column_count);
             res = JIO_RESULT_BAD_CSV_HEADER;
