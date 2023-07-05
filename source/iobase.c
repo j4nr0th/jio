@@ -284,7 +284,7 @@ bool string_segment_equal_str_case(const jio_string_segment* first, const char* 
 
 bool iswhitespace(unsigned c)
 {
-    return c == ' ' || c == '\t' || c == '\n';
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 
 jio_result jio_memory_file_sync(const jio_memory_file* file, int sync)
