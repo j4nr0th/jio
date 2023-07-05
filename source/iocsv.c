@@ -885,7 +885,7 @@ jio_result jio_process_csv_exact(
     uint32_t row_count = 0;
     while (row_end)
     {
-        if ((res = extract_row_entries(column_count, row_begin, row_end, separator, sep_len, false, segments)))
+        if ((res = extract_row_entries(column_count, row_begin, row_end, separator, sep_len, true, segments)))
         {
             JDM_ERROR("Failed parsing row %u of CSV file \"%s\", reason: %s", row_count + 1, mem_file->name, jio_result_to_str(res));
             goto end;
