@@ -843,7 +843,7 @@ jio_result jio_process_csv_exact(
         bool converters_complete = true;
         for (uint32_t i = 0; i < column_count; ++i)
         {
-            if (converter_array[i] != NULL)
+            if (converter_array[i] == NULL)
             {
                 converters_complete = false;
                 JDM_ERROR("Converter for column %u (%.*s) was not provided", i, (int)headers[i].len, headers[i].begin);
