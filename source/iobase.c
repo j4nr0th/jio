@@ -309,3 +309,90 @@ end:
     return res;
 }
 
+jio_result jio_memory_file_count_lines(const jio_memory_file* file, uint32_t* p_out)
+{
+    JDM_ENTER_FUNCTION;
+    if (!file || !p_out)
+    {
+        if (!file)
+        {
+            JDM_ERROR("Memory file was not provided");
+        }
+        if (!p_out)
+        {
+            JDM_ERROR("Output file was not provided");
+        }
+        JDM_LEAVE_FUNCTION;
+        return JIO_RESULT_NULL_ARG;
+    }
+
+    uint32_t count = 1;
+    for (const char* ptr = file->ptr; ptr; ptr = memchr(ptr, '\n', file->file_size - (ptr - (const char*)file->ptr)))
+    {
+        count += 1;
+        ptr += 1;
+    }
+
+    *p_out = count;
+
+    JDM_LEAVE_FUNCTION;
+    return JIO_RESULT_SUCCESS;
+}
+
+jio_result jio_memory_file_count_non_empty_lines(const jio_memory_file* file, uint32_t* p_out)
+{
+    JDM_ENTER_FUNCTION;
+    if (!file || !p_out)
+    {
+        if (!file)
+        {
+            JDM_ERROR("Memory file was not provided");
+        }
+        if (!p_out)
+        {
+            JDM_ERROR("Output file was not provided");
+        }
+        JDM_LEAVE_FUNCTION;
+        return JIO_RESULT_NULL_ARG;
+    }
+
+    uint32_t count = 1;
+    const char* ptr = file->ptr;
+    const char* const end = (const char*)file->ptr + file->file_size;
+    for (;;)
+    {
+        const char* next = memchr(ptr, '\n', end - ptr);
+        const char* end_of_line;
+        if (!next)
+        {
+            end_of_line = end;
+        }
+        else
+        {
+            end_of_line = next;
+        }
+
+        while (ptr < end_of_line)
+        {
+            if (*ptr && !iswhitespace(*ptr))
+            {
+                count += 1;
+                break;
+            }
+            ++ptr;
+        }
+
+        ptr = next + 1;
+
+        if (!next)
+        {
+            break;
+        }
+    }
+
+    *p_out = count;
+
+    JDM_LEAVE_FUNCTION;
+    return JIO_RESULT_SUCCESS;
+}
+

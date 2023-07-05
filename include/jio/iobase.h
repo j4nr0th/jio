@@ -47,6 +47,10 @@ jio_result jio_memory_file_create(
 
 jio_result jio_memory_file_sync(const jio_memory_file* file, int sync);
 
+jio_result jio_memory_file_count_lines(const jio_memory_file* file, uint32_t* p_out);
+
+jio_result jio_memory_file_count_non_empty_lines(const jio_memory_file* file, uint32_t* p_out);
+
 void jio_memory_file_destroy(jio_memory_file* p_file_out);
 
 //bool jio_memory_file_equal(const jio_memory_file* f1, const char* filename);

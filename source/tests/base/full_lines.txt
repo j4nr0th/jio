@@ -1,0 +1,18 @@
+From Wikipedia, the free encyclopedia, taken from https://en.wikipedia.org/wiki/Finite_element_method
+"Finite element" redirects here. For the elements of a poset, see compact element.
+The finite element method (FEM) is a popular method for numerically solving differential equations arising in engineering and mathematical modeling. Typical problem areas of interest include the traditional fields of structural analysis, heat transfer, fluid flow, mass transport, and electromagnetic potential.
+The FEM is a general numerical method for solving partial differential equations in two or three space variables (i.e., some boundary value problems). To solve a problem, the FEM subdivides a large system into smaller, simpler parts that are called finite elements. This is achieved by a particular space discretization in the space dimensions, which is implemented by the construction of a mesh of the object: the numerical domain for the solution, which has a finite number of points. The finite element method formulation of a boundary value problem finally results in a system of algebraic equations. The method approximates the unknown function over the domain.[1] The simple equations that model these finite elements are then assembled into a larger system of equations that models the entire problem. The FEM then approximates a solution by minimizing an associated error function via the calculus of variations.
+Studying or analyzing a phenomenon with FEM is often referred to as finite element analysis (FEA).
+Basic concepts
+Example of 2D mesh
+FEM mesh created by an analyst prior to finding a solution to a magnetic problem using FEM software. Colors indicate that the analyst has set material properties for each zone, in this case, a conducting wire coil in orange; a ferromagnetic component (perhaps iron) in light blue; and air in grey. Although the geometry may seem simple, it would be very challenging to calculate the magnetic field for this setup without FEM software, using equations alone.
+FEM_example_of_2D_solution
+FEM solution to the problem at left, involving a cylindrically shaped magnetic shield. The ferromagnetic cylindrical part is shielding the area inside the cylinder by diverting the magnetic field created by the coil (rectangular area on the right). The color represents the amplitude of the magnetic flux density, as indicated by the scale in the inset legend, red being high amplitude. The area inside the cylinder is the low amplitude (dark blue, with widely spaced lines of magnetic flux), which suggests that the shield is performing as it was designed to.
+The subdivision of a whole domain into simpler parts has several advantages:[2]
+    Accurate representation of complex geometry
+    Inclusion of dissimilar material properties
+    Easy representation of the total solution
+    Capture of local effects.
+Typical work out of the method involves:
+    dividing the domain of the problem into a collection of subdomains, with each subdomain represented by a set of element equations to the original problem
+    systematically recombining all sets of element equations into a global system of equations for the final calculation.
