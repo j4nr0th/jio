@@ -74,33 +74,82 @@ static inline void print_csv(const jio_csv_data* data)
     }
 }
 
+
+static const char* const banana_string = "Banana";
+static void* wrap_alloc(void* param, uint64_t size)
+{
+    ASSERT(param == banana_string);
+    return malloc(size);
+}
+static void* wrap_realloc(void* param, void* ptr, uint64_t new_size)
+{
+    ASSERT(param == banana_string);
+    return realloc(ptr, new_size);
+}
+static void wrap_free(void* param, void* ptr)
+{
+    ASSERT(param == banana_string);
+    free(ptr);
+}
+
+static const jio_allocator_callbacks jio_callbacks =
+        {
+                .param = (void*)banana_string,
+                .alloc = wrap_alloc,
+                .realloc = wrap_realloc,
+                .free = wrap_free,
+        };
+
+static const char* const potato_string = "Potato";
+static void* wrap_save(void* param)
+{
+    ASSERT(param == banana_string);
+    return (void*)potato_string;
+}
+static void wrap_restore(void* param, void* ptr)
+{
+    ASSERT(param == banana_string);
+    ASSERT(ptr == potato_string);
+}
+static const jio_stack_allocator_callbacks jio_stack_callbacks =
+        {
+                .param = (void*)banana_string,
+                .alloc = wrap_alloc,
+                .realloc = wrap_realloc,
+                .free = wrap_free,
+                .save = wrap_save,
+                .restore = wrap_restore,
+        };
+
+static const jdm_allocator_callbacks jdm_callbacks =
+        {
+                .param = (void*)banana_string,
+                .alloc = wrap_alloc,
+                .free = wrap_free,
+        };
+
 int main()
 {
-    jallocator* allocator = jallocator_create((1 << 20), 1);
-    ASSERT(allocator);
-    jdm_init_thread("master", JDM_MESSAGE_LEVEL_NONE, 32, 32, allocator);
+    jdm_init_thread("master", JDM_MESSAGE_LEVEL_NONE, 32, 32, &jdm_callbacks);
+    JDM_ENTER_FUNCTION;
     jdm_set_hook(error_hook_fn, NULL);
-    linear_jallocator* lin_allocator = lin_jallocator_create(1 << 20);
-    ASSERT(lin_allocator);
-    void* const base = lin_jalloc_get_current(lin_allocator);
-
     jio_memory_file csv_file;
     jio_result res = jio_memory_file_create("csv_test_simple.csv", &csv_file, 0, 0, 0);
     ASSERT(res == JIO_RESULT_SUCCESS);
 
     jio_csv_data* csv_data;
     //  Test failures
-    res = jio_parse_csv(NULL, ",", true, true, &csv_data, allocator, lin_allocator);
+    res = jio_parse_csv(NULL, ",", true, true, &csv_data, &jio_callbacks, &jio_stack_callbacks);
     ASSERT(res == JIO_RESULT_NULL_ARG);
-    res = jio_parse_csv(&csv_file, ",", true, true, NULL, allocator, lin_allocator);
+    res = jio_parse_csv(&csv_file, ",", true, true, NULL, &jio_callbacks, &jio_stack_callbacks);
     ASSERT(res == JIO_RESULT_NULL_ARG);
-    res = jio_parse_csv(&csv_file, ",", true, true, &csv_data, NULL, lin_allocator);
+    res = jio_parse_csv(&csv_file, ",", true, true, &csv_data, NULL, &jio_stack_callbacks);
     ASSERT(res == JIO_RESULT_NULL_ARG);
-    res = jio_parse_csv(&csv_file, ",", true, true, &csv_data, allocator, NULL);
+    res = jio_parse_csv(&csv_file, ",", true, true, &csv_data, &jio_callbacks, NULL);
     ASSERT(res == JIO_RESULT_NULL_ARG);
 
     //  Test correct version
-    res = jio_parse_csv(&csv_file, ",", true, true, &csv_data, allocator, lin_allocator);
+    res = jio_parse_csv(&csv_file, ",", true, true, &csv_data, &jio_callbacks, &jio_stack_callbacks);
     ASSERT(res == JIO_RESULT_SUCCESS);
     printf("\nCsv contents before editing:\n\n");
     print_csv(csv_data);
@@ -110,7 +159,7 @@ int main()
             .header = {.begin = "extra:)", .len = sizeof("extra:)") - 1},
             .count = 4,
             .capacity = 4,
-            .elements = jalloc(allocator, sizeof(*extra_column.elements) * 4),
+            .elements = jio_callbacks.alloc(jio_callbacks.param, sizeof(*extra_column.elements) * 4),
             };
     ASSERT(extra_column.elements != NULL);
     extra_column.elements[0].begin = "Ass", extra_column.elements[0].len = 3;
@@ -151,11 +200,11 @@ int main()
     printf("Csv contents after removing columns:\n");
     print_csv(csv_data);
 
-    jio_string_segment** row_array = lin_jalloc(lin_allocator, sizeof(jio_string_segment*) * 10);
+    jio_string_segment** row_array = jio_stack_callbacks.alloc(jio_stack_callbacks.param, sizeof(jio_string_segment*) * 10);
     ASSERT(row_array);
     for (uint32_t i = 0; i < 10; ++i)
     {
-        row_array[i] = lin_jalloc(lin_allocator, sizeof(*row_array[i]) * 4);
+        row_array[i] = jio_stack_callbacks.alloc(jio_stack_callbacks.param, sizeof(*row_array[i]) * 4);
         ASSERT(row_array[i]);
         for (uint32_t j = 0; j < 4; ++j)
         {
@@ -287,25 +336,13 @@ int main()
 
     for (uint32_t i = 0; i < 10; ++i)
     {
-        lin_jfree(lin_allocator, row_array[i]);
+        jio_stack_callbacks.free(jio_stack_callbacks.param, row_array[i]);
     }
-    lin_jfree(lin_allocator, row_array);
+    jio_stack_callbacks.free(jio_stack_callbacks.param, row_array);
 
     jio_csv_release(csv_data);
     jio_memory_file_destroy(&csv_file);
-
+    JDM_LEAVE_FUNCTION;
     jdm_cleanup_thread();
-    int_fast32_t i_pool, i_block;
-    ASSERT(jallocator_verify(allocator, &i_pool, &i_block) == 0);
-    uint_fast32_t leaked_array[128];
-    uint_fast32_t count_leaked = jallocator_count_used_blocks(allocator, 128, leaked_array);
-    for (uint_fast32_t i = 0; i < count_leaked; ++i)
-    {
-        fprintf(stderr, "Leaked block %"PRIuFAST32"\n", leaked_array[i]);
-    }
-    ASSERT(count_leaked == 0);
-    ASSERT(base == lin_jalloc_get_current(lin_allocator));
-    lin_jallocator_destroy(lin_allocator);
-
     return 0;
 }

@@ -7,7 +7,6 @@
 #include <stddef.h>
 #include <limits.h>
 #include <jdm.h>
-#include <jmem/jmem.h>
 #include <stdbool.h>
 #include "ioerr.h"
 
@@ -32,6 +31,26 @@ struct jio_string_segment_struct
     size_t len;
 };
 
+typedef struct jio_allocator_callbacks_struct jio_allocator_callbacks;
+struct jio_allocator_callbacks_struct
+{
+    void* (*alloc)(void* param, uint64_t size);
+    void (*free)(void* param, void* ptr);
+    void* (*realloc)(void* param, void* ptr, uint64_t new_size);
+    void* param;
+};
+
+typedef struct jio_stack_allocator_callbacks_struct jio_stack_allocator_callbacks;
+struct jio_stack_allocator_callbacks_struct
+{
+    void* (*alloc)(void* param, uint64_t size);
+    void (*free)(void* param, void* ptr);
+    void* (*realloc)(void* param, void* ptr, uint64_t new_size);
+    void* (*save)(void* param);
+    void (*restore)(void* param, void* state);
+    void* param;
+};
+
 bool iswhitespace(unsigned c);
 
 bool string_segment_equal(const jio_string_segment* first, const jio_string_segment* second);
@@ -52,9 +71,5 @@ jio_result jio_memory_file_count_lines(const jio_memory_file* file, uint32_t* p_
 jio_result jio_memory_file_count_non_empty_lines(const jio_memory_file* file, uint32_t* p_out);
 
 void jio_memory_file_destroy(jio_memory_file* p_file_out);
-
-//bool jio_memory_file_equal(const jio_memory_file* f1, const char* filename);
-
-
 
 #endif //JTB_IOBASE_H

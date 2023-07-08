@@ -11,7 +11,7 @@
 
 struct jio_csv_data_struct
 {
-    jallocator* allocator;                  //  Allocator used by this csv
+    jio_allocator_callbacks allocator_callbacks;                  //  Allocator used by this csv
     uint32_t column_capacity;               //  Max size of columns before resizing the array
     uint32_t column_count;                  //  Number of columns used
     uint32_t column_length;                 //  Length of each column
@@ -91,11 +91,11 @@ static inline jio_result extract_row_entries(const uint32_t expected_elements, c
 }
 
 jio_result jio_parse_csv(
-        const jio_memory_file* const mem_file, const char* restrict separator, const bool trim_whitespace, const bool has_headers,
-        jio_csv_data** const pp_csv, jallocator* const allocator, linear_jallocator* const lin_allocator)
+        const jio_memory_file* mem_file, const char* restrict separator, bool trim_whitespace, bool has_headers,
+        jio_csv_data** pp_csv, const jio_allocator_callbacks* allocator_callbacks, const jio_stack_allocator_callbacks* stack_callbacks)
 {
     JDM_ENTER_FUNCTION;
-    if (!mem_file || !pp_csv || !allocator || !lin_allocator || !separator)
+    if (!mem_file || !pp_csv || !allocator_callbacks || !stack_callbacks || !separator)
     {
         if (!mem_file)
         {
@@ -105,11 +105,11 @@ jio_result jio_parse_csv(
         {
             JDM_ERROR("Output pointer was null");
         }
-        if (!allocator)
+        if (!allocator_callbacks)
         {
             JDM_ERROR("Allocator was not provided");
         }
-        if (!lin_allocator)
+        if (!stack_callbacks)
         {
             JDM_ERROR("Linear allocator was not provided");
         }
@@ -121,9 +121,9 @@ jio_result jio_parse_csv(
         return JIO_RESULT_NULL_ARG;
     }
     jio_result res;
-    void* const base = lin_jalloc_get_current(lin_allocator);
+    void* const base = stack_callbacks->save(stack_callbacks->param);
     jio_csv_data* csv = NULL;
-    csv = jalloc(allocator, sizeof(*csv));
+    csv = allocator_callbacks->alloc(allocator_callbacks->param, sizeof(*csv));
     if (!csv)
     {
         res = JIO_RESULT_BAD_ALLOC;
@@ -131,7 +131,7 @@ jio_result jio_parse_csv(
     }
 
     memset(csv, 0, sizeof(*csv));
-    csv->allocator = allocator;
+    csv->allocator_callbacks = *allocator_callbacks;
 
     //  Parse the first row
     const char* row_begin = mem_file->ptr;
@@ -143,7 +143,7 @@ jio_result jio_parse_csv(
                                                sep_len);
     uint32_t row_capacity = 128;
     uint32_t row_count = 0;
-    jio_string_segment* segments = lin_jalloc(lin_allocator, sizeof(*segments) * row_capacity * column_count);
+    jio_string_segment* segments = stack_callbacks->alloc(stack_callbacks->param, sizeof(*segments) * row_capacity * column_count);
     if (!segments)
     {
         res = JIO_RESULT_BAD_ALLOC;
@@ -157,7 +157,7 @@ jio_result jio_parse_csv(
         if (row_capacity == row_count)
         {
             const uint32_t new_capacity = row_capacity + 128;
-            jio_string_segment* const new_ptr = lin_jrealloc(lin_allocator, segments, sizeof(*segments) * new_capacity * column_count);
+            jio_string_segment* const new_ptr = stack_callbacks->realloc(stack_callbacks->param, segments, sizeof(*segments) * new_capacity * column_count);
             if (!new_ptr)
             {
                 res = JIO_RESULT_BAD_ALLOC;
@@ -196,7 +196,7 @@ jio_result jio_parse_csv(
     csv->column_count = column_count;
     csv->column_length = row_count - (has_headers ? 1 : 0);
 
-    jio_csv_column* const columns = jalloc(allocator, sizeof(*columns) * column_count);
+    jio_csv_column* const columns = allocator_callbacks->alloc(allocator_callbacks->param, sizeof(*columns) * column_count);
     if (!columns)
     {
         res = JIO_RESULT_BAD_ALLOC;
@@ -207,12 +207,12 @@ jio_result jio_parse_csv(
     {
         jio_csv_column* const p_column = columns + i;
         p_column->capacity = (p_column->count = csv->column_length);
-        jio_string_segment* const elements = jalloc(allocator, sizeof(*elements) * p_column->count);
+        jio_string_segment* const elements = allocator_callbacks->alloc(allocator_callbacks->param, sizeof(*elements) * p_column->count);
         if (!elements)
         {
             for (uint32_t j = 0; j < i; ++j)
             {
-                jfree(allocator, columns[j].elements);
+                allocator_callbacks->free(allocator_callbacks->param, columns[j].elements);
             }
             JDM_ERROR("Could not allocate memory for csv column elements");
             goto end;
@@ -235,15 +235,15 @@ jio_result jio_parse_csv(
         p_column->header = has_headers ? segments[i] : (jio_string_segment){ .begin = NULL, .len = 0 };
 
     }
-    lin_jfree(lin_allocator, segments);
+    stack_callbacks->free(stack_callbacks->param, segments);
     csv->columns = columns;
 
     *pp_csv = csv;
     JDM_LEAVE_FUNCTION;
     return JIO_RESULT_SUCCESS;
 end:
-    lin_jalloc_set_current(lin_allocator, base);
-    jfree(allocator, csv);
+    stack_callbacks->restore(stack_callbacks->param, base);
+    allocator_callbacks->free(allocator_callbacks->param, csv);
     JDM_LEAVE_FUNCTION;
     return res;
 }
@@ -259,11 +259,11 @@ jio_result jio_csv_release(jio_csv_data* data)
     }
     for (uint32_t i = 0; i < data->column_count; ++i)
     {
-        jfree(data->allocator, data->columns[i].elements);
+        data->allocator_callbacks.free(data->allocator_callbacks.param, data->columns[i].elements);
     }
 
-    jfree(data->allocator, data->columns);
-    jfree(data->allocator, data);
+    data->allocator_callbacks.free(data->allocator_callbacks.param, data->columns);
+    data->allocator_callbacks.free(data->allocator_callbacks.param, data);
 
     JDM_LEAVE_FUNCTION;
     return JIO_RESULT_SUCCESS;
@@ -458,7 +458,7 @@ jio_csv_add_rows(jio_csv_data* data, uint32_t position, uint32_t row_count, cons
         const uint32_t new_capacity = data->columns[0].capacity + (row_count < 64 ? 64 : row_count);
         for (uint32_t i = 0; i < data->column_count; ++i)
         {
-            jio_string_segment* const new_ptr = jrealloc(data->allocator, data->columns[i].elements, new_capacity * sizeof(*new_ptr));
+            jio_string_segment* const new_ptr = data->allocator_callbacks.realloc(data->allocator_callbacks.param, data->columns[i].elements, new_capacity * sizeof(*new_ptr));
             if (!new_ptr)
             {
                 JDM_ERROR("Could not reallocate column %u to fit additional %u row elements", i, row_count);
@@ -494,7 +494,8 @@ jio_csv_add_rows(jio_csv_data* data, uint32_t position, uint32_t row_count, cons
         jio_string_segment* const elements = column->elements;
         for (uint32_t j = 0; j < row_count; ++j)
         {
-            elements[position + j] = rows[i][j];
+            elements[position + j] = rows[j][i];
+            JDM_TRACE("%c", *(volatile char*)rows[j][i].begin);
         }
         column->count += row_count;
     }
@@ -550,7 +551,7 @@ jio_result jio_csv_add_cols(jio_csv_data* data, uint32_t position, uint32_t col_
     if (data->column_count + col_count >= data->column_capacity)
     {
         const uint32_t new_capacity = data->column_capacity + (col_count < 8 ? 8 :  col_count);
-        jio_csv_column* const new_ptr = jrealloc(data->allocator, data->columns, sizeof(*new_ptr) * new_capacity);
+        jio_csv_column* const new_ptr = data->allocator_callbacks.realloc(data->allocator_callbacks.param, data->columns, sizeof(*new_ptr) * new_capacity);
         if (!new_ptr)
         {
             JDM_ERROR("Could not reallocate memory for column array");
@@ -640,7 +641,7 @@ jio_result jio_csv_remove_cols(jio_csv_data* data, uint32_t position, uint32_t c
     for (uint32_t i = begin; i < end; ++i)
     {
         jio_csv_column* const column = data->columns + i;
-        jfree(data->allocator, column->elements);
+        data->allocator_callbacks.free(data->allocator_callbacks.param, column->elements);
     }
     memmove(data->columns + begin, data->columns + end, sizeof(*data->columns) * (data->column_count - end));
     data->column_count -= col_count;
@@ -682,7 +683,7 @@ jio_result jio_csv_replace_cols(
     if (d_col + data->column_count >= data->column_capacity)
     {
         const uint32_t new_capacity = data->column_capacity + (d_col < 8 ? 8 : d_col);
-        jio_csv_column* const columns = jrealloc(data->allocator, data->columns, sizeof(*data->columns) * new_capacity);
+        jio_csv_column* const columns = data->allocator_callbacks.realloc(data->allocator_callbacks.param, data->columns, sizeof(*data->columns) * new_capacity);
         if (!columns)
         {
             JDM_ERROR("Could not reallocate memory for columns");
@@ -695,7 +696,7 @@ jio_result jio_csv_replace_cols(
 
     for (uint32_t i = begin; i < end; ++i)
     {
-        jfree(data->allocator, data->columns[i].elements);
+        data->allocator_callbacks.free(data->allocator_callbacks.param, data->columns[i].elements);
     }
     if (end != data->column_count)
     {
@@ -745,7 +746,7 @@ jio_result jio_csv_replace_rows(
         {
             jio_csv_column* const column = data->columns + i;
             const uint32_t new_capacity = column->capacity + (d_row < 8 ? 8 : d_row);
-            jio_string_segment* const elements = jrealloc(data->allocator, column->elements, sizeof(*column->elements) * new_capacity);
+            jio_string_segment* const elements = data->allocator_callbacks.realloc(data->allocator_callbacks.param, column->elements, sizeof(*column->elements) * new_capacity);
             if (!elements)
             {
                 JDM_ERROR("Could not reallocate memory for column elements");
@@ -764,7 +765,7 @@ jio_result jio_csv_replace_rows(
         //  Insert the new elements for each row
         for (uint32_t j = 0; j < row_count; ++j)
         {
-            column->elements[j + begin] = rows[i][j];
+            column->elements[j + begin] = rows[j][i];
         }
         column->count += d_row;
     }
@@ -815,16 +816,16 @@ end:
 
 jio_result jio_process_csv_exact(
         const jio_memory_file* mem_file, const char* separator, uint32_t column_count, const jio_string_segment* headers,
-        bool (** converter_array)(jio_string_segment*, void*), void** param_array, linear_jallocator* lin_allocator)
+        bool (** converter_array)(jio_string_segment*, void*), void** param_array, const jio_stack_allocator_callbacks* stack_callbacks)
 {
     JDM_ENTER_FUNCTION;
-    if (!mem_file || !lin_allocator || !converter_array || !param_array)
+    if (!mem_file || !stack_callbacks || !converter_array || !param_array)
     {
         if (!mem_file)
         {
             JDM_ERROR("Memory mapped file to parse was not provided");
         }
-        if (!lin_allocator)
+        if (!stack_callbacks)
         {
             JDM_ERROR("Linear allocator was not provided");
         }
@@ -856,7 +857,7 @@ jio_result jio_process_csv_exact(
         }
     }
     jio_result res;
-    void* const base = lin_jalloc_get_current(lin_allocator);
+    void* const base = stack_callbacks->save(stack_callbacks->param);
 
     //  Parse the first row
     const char* row_begin = mem_file->ptr;
@@ -874,7 +875,7 @@ jio_result jio_process_csv_exact(
             goto end;
         }
     }
-    jio_string_segment* segments = lin_jalloc(lin_allocator, sizeof(*segments) * column_count);
+    jio_string_segment* segments = stack_callbacks->alloc(stack_callbacks->param, sizeof(*segments) * column_count);
     if (!segments)
     {
         res = JIO_RESULT_BAD_ALLOC;
@@ -906,11 +907,11 @@ jio_result jio_process_csv_exact(
         row_end = strchr(row_end + 1, '\n');
     }
 
-    lin_jfree(lin_allocator, segments);
+    stack_callbacks->free(stack_callbacks->param, segments);
     JDM_LEAVE_FUNCTION;
     return JIO_RESULT_SUCCESS;
     end:
-    lin_jalloc_set_current(lin_allocator, base);
+    stack_callbacks->restore(stack_callbacks->param, base);
     JDM_LEAVE_FUNCTION;
     return res;
 }

@@ -219,13 +219,13 @@ static bool parse_name_from_string(const uint64_t max_len, const char* const str
 jio_result jio_xml_release(jio_xml_element* root)
 {
     JDM_ENTER_FUNCTION;
-    jfree(root->allocator, root->attribute_values);
-    jfree(root->allocator, root->attribute_names);
+    root->allocator_callbacks.free(root->allocator_callbacks.param, root->attribute_values);
+    root->allocator_callbacks.free(root->allocator_callbacks.param, root->attribute_names);
     for (uint32_t i = 0; i < root->child_count; ++i)
     {
         jio_xml_release(root->children + i);
     }
-    jfree(root->allocator, root->children);
+    root->allocator_callbacks.free(root->allocator_callbacks.param, root->children);
     memset(root, 0, sizeof*root);
     JDM_LEAVE_FUNCTION;
     return JIO_RESULT_SUCCESS;
@@ -279,7 +279,7 @@ jio_result rmod_serialize_xml(jio_xml_element* root, FILE* f_out)
     return JIO_RESULT_SUCCESS;
 }
 
-jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_root, jallocator* allocator)
+jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_root, const jio_allocator_callbacks* allocator_callbacks)
 {
     JDM_ENTER_FUNCTION;
     const char* const xml = mem_file->ptr;
@@ -321,7 +321,7 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
     } while(!is_name_start_char(c));
 
     //  We have now arrived at the root element
-    jio_xml_element root = {.allocator = allocator};
+    jio_xml_element root = {.allocator_callbacks = *allocator_callbacks};
     //  Find the end of root's name
     if (!parse_name_from_string(len - (pos - xml), pos, &root.name))
     {
@@ -343,7 +343,7 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
 
     uint32_t stack_depth = 32;
     uint32_t stack_pos = 0;
-    jio_xml_element** current_stack = jalloc(allocator, stack_depth * sizeof(*current_stack));
+    jio_xml_element** current_stack = allocator_callbacks->alloc(allocator_callbacks->param, stack_depth * sizeof(*current_stack));
     if (!current_stack)
     {
         JDM_ERROR("Failed jalloc (%zu)", stack_depth * sizeof(*current_stack));
@@ -365,7 +365,7 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
         const char* new_pos = strchr(pos, '<');
         if (!new_pos)
         {
-            JDM_ERROR("Tag \"%.*s\" on line %u is unclosed", current->name.len, current->name.begin,
+            JDM_ERROR("Tag \"%.*s\" on line %u is unclosed", (int)current->name.len, current->name.begin,
                        count_new_lines(current->name.begin - xml, xml));
             goto free_fail;
         }
@@ -390,14 +390,14 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
             //  End tag
             if (strncmp(pos + 1, current->name.begin, current->name.len) != 0)
             {
-                JDM_ERROR("Tag \"%.*s\" on line %u was not properly closed", current->name.len, current->name.begin,
+                JDM_ERROR("Tag \"%.*s\" on line %u was not properly closed", (int)current->name.len, current->name.begin,
                            count_new_lines(current->name.begin - xml, xml));
                 goto free_fail;
             }
             pos += 1 + current->name.len;
             if (*pos != '>')
             {
-                JDM_ERROR("Tag \"%.*s\" on line %u was not properly closed", current->name.len, current->name.begin,
+                JDM_ERROR("Tag \"%.*s\" on line %u was not properly closed", (int)current->name.len, current->name.begin,
                            count_new_lines(current->name.begin - xml, xml));
                 goto free_fail;
             }
@@ -437,7 +437,7 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
             if (current->child_count == current->child_capacity)
             {
                 const uint64_t new_capacity = current->child_capacity + 32;
-                jio_xml_element* const new_ptr = jrealloc(allocator, current->children, sizeof(*current->children) * new_capacity);
+                jio_xml_element* const new_ptr = allocator_callbacks->realloc(allocator_callbacks->param, current->children, sizeof(*current->children) * new_capacity);
                 if (!new_ptr)
                 {
                     JDM_ERROR("Failed jrealloc(%p, %zu)", current->children, sizeof(*current->children) * new_capacity);
@@ -449,7 +449,7 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
             }
             jio_xml_element* new_child = current->children + (current->child_count++);
             new_child->name = name;
-            new_child->allocator = allocator;
+            new_child->allocator_callbacks = *allocator_callbacks;
 
 
             while (is_whitespace(*pos))
@@ -462,7 +462,7 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
                 jio_string_segment attrib_name, attrib_val;
                 if (!parse_name_from_string(len - (pos - xml), pos, &attrib_name))
                 {
-                    JDM_ERROR("Failed parsing attribute name for block %.*s on line %u", name.len, name.begin,
+                    JDM_ERROR("Failed parsing attribute name for block %.*s on line %u", (int)name.len, name.begin,
                                count_new_lines(pos - xml, xml));
                     goto free_fail;
                 }
@@ -474,7 +474,7 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
                 }
                 if (*pos != '=')
                 {
-                    JDM_ERROR("Failed parsing attribute %.*s for block %.*s on line %u: attribute name and value must be separated by '='", attrib_name.len, attrib_name.begin, name.len, name.begin,
+                    JDM_ERROR("Failed parsing attribute %.*s for block %.*s on line %u: attribute name and value must be separated by '='", (int)attrib_name.len, attrib_name.begin, (int)name.len, name.begin,
                                count_new_lines(pos - xml, xml));
                     goto free_fail;
                 }
@@ -485,14 +485,14 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
                 }
                 if (*pos != '\'' && *pos != '\"')
                 {
-                    JDM_ERROR("Failed parsing attribute %.*s for block %.*s on line %u: attribute value must be quoted", attrib_name.len, attrib_name.begin, name.len, name.begin,
+                    JDM_ERROR("Failed parsing attribute %.*s for block %.*s on line %u: attribute value must be quoted", (int)attrib_name.len, attrib_name.begin, (int)name.len, name.begin,
                                count_new_lines(pos - xml, xml));
                     goto free_fail;
                 }
                 new_pos = strchr(pos + 1, *pos);
                 if (!new_pos)
                 {
-                    JDM_ERROR("Failed parsing attribute %.*s for block %.*s on line %u: attribute value quotes are not closed", attrib_name.len, attrib_name.begin, name.len, name.begin,
+                    JDM_ERROR("Failed parsing attribute %.*s for block %.*s on line %u: attribute value quotes are not closed", (int)attrib_name.len, attrib_name.begin, (int)name.len, name.begin,
                                count_new_lines(pos - xml, xml));
                     goto free_fail;
                 }
@@ -501,14 +501,14 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
                 pos = new_pos + 1;
                 if (!is_whitespace(*pos) && *pos != '>')
                 {
-                    JDM_ERROR("Failed parsing attribute %.*s for block %.*s on line %u: attributes should be separated by whitespace", attrib_name.len, attrib_name.begin, name.len, name.begin,
+                    JDM_ERROR("Failed parsing attribute %.*s for block %.*s on line %u: attributes should be separated by whitespace", (int)attrib_name.len, attrib_name.begin, (int)name.len, name.begin,
                                count_new_lines(pos - xml, xml));
                     goto free_fail;
                 }
                 if (new_child->attrib_count == new_child->attrib_capacity)
                 {
                     const uint32_t new_capacity = new_child->attrib_capacity + 8;
-                    jio_string_segment* const new_ptr1 = jrealloc(allocator, new_child->attribute_names, sizeof(*new_ptr1) * new_capacity);
+                    jio_string_segment* const new_ptr1 = allocator_callbacks->realloc(allocator_callbacks->param, new_child->attribute_names, sizeof(*new_ptr1) * new_capacity);
                     if (!new_ptr1)
                     {
                         JDM_ERROR("Failed calling jrealloc(%p, %zu)", new_child->attribute_names, sizeof(*new_ptr1) * new_capacity);
@@ -517,7 +517,7 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
                     memset(new_ptr1 + new_child->attrib_count, 0, sizeof(*new_ptr1) * (new_capacity - new_child->attrib_capacity));
                     new_child->attribute_names = new_ptr1;
 
-                    jio_string_segment* const new_ptr2 = jrealloc(allocator, new_child->attribute_values, sizeof(*new_ptr2) * new_capacity);
+                    jio_string_segment* const new_ptr2 = allocator_callbacks->realloc(allocator_callbacks->param, new_child->attribute_values, sizeof(*new_ptr2) * new_capacity);
                     if (!new_ptr2)
                     {
                         JDM_ERROR("Failed calling jrealloc(%p, %zu)", new_child->attribute_values, sizeof(*new_ptr2) * new_capacity);
@@ -544,7 +544,7 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
             if (stack_pos == stack_depth)
             {
                 const uint64_t new_depth = stack_depth + 32;
-                jio_xml_element** const new_ptr = jrealloc(allocator, current_stack, sizeof(*current_stack) * new_depth);
+                jio_xml_element** const new_ptr = allocator_callbacks->realloc(allocator_callbacks->param, current_stack, sizeof(*current_stack) * new_depth);
                 if (!new_ptr)
                 {
                     JDM_ERROR("Failed jrealloc(%p, %zu)", current_stack, sizeof(*current_stack) * new_depth);
@@ -574,14 +574,14 @@ jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_roo
 
     done:
     assert(stack_pos == 0);
-    jfree(allocator, current_stack);
+    allocator_callbacks->free(allocator_callbacks->param, current_stack);
     *p_root = root;
     JDM_LEAVE_FUNCTION;
     return JIO_RESULT_SUCCESS;
 
-    free_fail:
+free_fail:
     jio_xml_release(&root);
-    jfree(allocator, current_stack);
+    allocator_callbacks->free(allocator_callbacks->param, current_stack);
     failed:
     JDM_LEAVE_FUNCTION;
     return JIO_RESULT_BAD_XML_FORMAT;

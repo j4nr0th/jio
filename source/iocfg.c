@@ -15,15 +15,15 @@ static void destroy_array(jio_cfg_array* array)
             destroy_array(&array->values[i].value_array);
         }
     }
-    jfree(array->allocator, array->values);
+    array->allocator_callbacks.free(array->allocator_callbacks.param, array->values);
 }
 
 
-jio_result jio_cfg_section_create(jallocator* allocator, jio_string_segment name, jio_cfg_section** pp_out)
+jio_result jio_cfg_section_create(const jio_allocator_callbacks* allocator_callbacks, jio_string_segment name, jio_cfg_section** pp_out)
 {
     JDM_ENTER_FUNCTION;
 
-    jio_cfg_section* section = jalloc(allocator, sizeof(*section));
+    jio_cfg_section* section = allocator_callbacks->alloc(allocator_callbacks->param, sizeof(*section));
     if (!section)
     {
         JDM_ERROR("Could not allocate memory for section");
@@ -31,25 +31,25 @@ jio_result jio_cfg_section_create(jallocator* allocator, jio_string_segment name
         return JIO_RESULT_BAD_ALLOC;
     }
 
-    section->allocator = allocator;
+    section->allocator_callbacks = *allocator_callbacks;
     section->name = name;
     section->value_count = 0;
     section->value_capacity = 8;
-    section->value_array = jalloc(allocator, sizeof(*section->value_array) * section->value_capacity);
+    section->value_array = allocator_callbacks->alloc(allocator_callbacks->param, sizeof(*section->value_array) * section->value_capacity);
     if (!section->value_array)
     {
-        jfree(allocator, section);
+        allocator_callbacks->free(allocator_callbacks->param, section);
         JDM_ERROR("Could not allocate memory for section values");
         JDM_LEAVE_FUNCTION;
         return JIO_RESULT_BAD_ALLOC;
     }
     section->subsection_capacity = 4;
     section->subsection_count = 0;
-    section->subsection_array = jalloc(allocator, sizeof(*section->subsection_array) * section->subsection_capacity);
+    section->subsection_array = allocator_callbacks->alloc(allocator_callbacks->param, sizeof(*section->subsection_array) * section->subsection_capacity);
     if (!section->subsection_array)
     {
-        jfree(allocator, section);
-        jfree(allocator, section->value_array);
+        allocator_callbacks->free(allocator_callbacks->param, section);
+        allocator_callbacks->free(allocator_callbacks->param, section->value_array);
         JDM_ERROR("Could not allocate memory for root section subsections");
         JDM_LEAVE_FUNCTION;
         return JIO_RESULT_BAD_ALLOC;
@@ -59,7 +59,7 @@ jio_result jio_cfg_section_create(jallocator* allocator, jio_string_segment name
     return JIO_RESULT_SUCCESS;
 }
 
-static jio_result parse_string_segment_to_cfg_element_value(jallocator* allocator, jio_string_segment segment, jio_cfg_value* value)
+static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_callbacks* allocator_callbacks, jio_string_segment segment, jio_cfg_value* value)
 {
     JDM_ENTER_FUNCTION;
 
@@ -70,10 +70,10 @@ static jio_result parse_string_segment_to_cfg_element_value(jallocator* allocato
         segment.begin += 1;
         segment.len -= 1;
         jio_cfg_array array;
-        array.allocator = allocator;
+        array.allocator_callbacks = *allocator_callbacks;
         array.count = 0;
         array.capacity = 8;
-        array.values = jalloc(allocator, sizeof(*array.values) * array.capacity);
+        array.values = allocator_callbacks->alloc(allocator_callbacks->param, sizeof(*array.values) * array.capacity);
         if (!array.values)
         {
             JDM_ERROR("Could not allocate memory for an array");
@@ -90,7 +90,7 @@ static jio_result parse_string_segment_to_cfg_element_value(jallocator* allocato
             if (array.capacity == array.count)
             {
                 const uint32_t new_capacity = array.capacity << 1;
-                jio_cfg_value* const new_ptr = jrealloc(array.allocator, array.values, sizeof(*array.values) * new_capacity);
+                jio_cfg_value* const new_ptr = allocator_callbacks->realloc(allocator_callbacks->param, array.values, sizeof(*array.values) * new_capacity);
                 if (!new_ptr)
                 {
                     JDM_ERROR("Could not reallocate array values array");
@@ -118,7 +118,7 @@ static jio_result parse_string_segment_to_cfg_element_value(jallocator* allocato
                     {
                         val_begin += 1;
                     }
-                    res = parse_string_segment_to_cfg_element_value(allocator, (jio_string_segment){.begin = val_begin, .len = val_end - val_begin}, &element_value);
+                    res = parse_string_segment_to_cfg_element_value(allocator_callbacks, (jio_string_segment){.begin = val_begin, .len = val_end - val_begin}, &element_value);
                     if (res != JIO_RESULT_SUCCESS)
                     {
                         JDM_ERROR("Could not convert value to array element");
@@ -146,7 +146,7 @@ static jio_result parse_string_segment_to_cfg_element_value(jallocator* allocato
         {
             val_begin += 1;
         }
-        jio_result res = parse_string_segment_to_cfg_element_value(allocator, (jio_string_segment){.begin = val_begin, .len = val_end - val_begin}, &element_value);
+        jio_result res = parse_string_segment_to_cfg_element_value(allocator_callbacks, (jio_string_segment){.begin = val_begin, .len = val_end - val_begin}, &element_value);
         if (res != JIO_RESULT_SUCCESS)
         {
             JDM_ERROR("Could not convert value to array element");
@@ -242,14 +242,14 @@ end:
     return JIO_RESULT_SUCCESS;
 }
 
-jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_root_section, jallocator* allocator)
+jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_root_section, const jio_allocator_callbacks* allocator_callbacks)
 {
     JDM_ENTER_FUNCTION;
     jio_result res;
 
     //  First prepare the root section
     jio_cfg_section* root;
-    res = jio_cfg_section_create(allocator, (jio_string_segment){.begin = NULL, .len = 0}, &root);
+    res = jio_cfg_section_create(allocator_callbacks, (jio_string_segment){.begin = NULL, .len = 0}, &root);
     if (res != JIO_RESULT_SUCCESS)
     {
         JDM_ERROR("Could not create root section");
@@ -346,7 +346,7 @@ jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_r
                 else if (search_res == JIO_RESULT_BAD_CFG_SECTION_NAME)
                 {
                     //  Subsection does not exist already
-                    res = jio_cfg_section_create(allocator, sub_name, &subsection);
+                    res = jio_cfg_section_create(allocator_callbacks, sub_name, &subsection);
                     if (res != JIO_RESULT_SUCCESS)
                     {
                         JDM_ERROR("Could not create subsection, reason: %s", jio_result_to_str(res));
@@ -414,7 +414,7 @@ jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_r
             }
             jio_string_segment value_segment = {.begin = value_begin,  row_end - value_begin};
             jio_cfg_value val;
-            res = parse_string_segment_to_cfg_element_value(allocator, value_segment, &val);
+            res = parse_string_segment_to_cfg_element_value(allocator_callbacks, value_segment, &val);
             if (res != JIO_RESULT_SUCCESS)
             {
                 JDM_ERROR("Could not convert \"%.*s\" to valid value", (int)value_segment.len, value_segment.begin);
@@ -459,15 +459,15 @@ jio_result jio_cfg_section_destroy(jio_cfg_section* section)
             destroy_array(&section->value_array[i].value.value_array);
         }
     }
-    jfree(section->allocator, section->value_array);
+    section->allocator_callbacks.free(section->allocator_callbacks.param, section->value_array);
     section->value_array = (void*)-1;
     for (uint32_t i = 0; i < section->subsection_count; ++i)
     {
         jio_cfg_section_destroy(section->subsection_array[i]);
     }
-    jfree(section->allocator, section->subsection_array);
+    section->allocator_callbacks.free(section->allocator_callbacks.param, section->subsection_array);
     section->subsection_array = (void*)-1;
-    jfree(section->allocator, section);
+    section->allocator_callbacks.free(section->allocator_callbacks.param, section);
     JDM_LEAVE_FUNCTION;
     return JIO_RESULT_SUCCESS;
 }
@@ -478,7 +478,7 @@ jio_result jio_cfg_section_insert(jio_cfg_section* parent, jio_cfg_section* chil
     if (parent->subsection_count == parent->subsection_capacity)
     {
         const uint32_t new_capacity = parent->subsection_capacity << 1;
-        jio_cfg_section** const new_ptr = jrealloc(parent->allocator, parent->subsection_array, sizeof(*parent->subsection_array) * new_capacity);
+        jio_cfg_section** const new_ptr = parent->allocator_callbacks.realloc(parent->allocator_callbacks.param, parent->subsection_array, sizeof(*parent->subsection_array) * new_capacity);
         if (!new_ptr)
         {
             JDM_ERROR("Could not reallocate memory for parent's subsection array");
@@ -639,7 +639,7 @@ jio_result jio_cfg_element_insert(jio_cfg_section* section, jio_cfg_element elem
     if (section->value_capacity == section->value_count)
     {
         const uint32_t new_capacity = section->value_capacity << 1;
-        jio_cfg_element* const new_ptr = jrealloc(section->allocator, section->value_array, sizeof(*section->value_array) * new_capacity);
+        jio_cfg_element* const new_ptr = section->allocator_callbacks.realloc(section->allocator_callbacks.param, section->value_array, sizeof(*section->value_array) * new_capacity);
         if (!new_ptr)
         {
             JDM_ERROR("Could not allocate memory for section's value array");

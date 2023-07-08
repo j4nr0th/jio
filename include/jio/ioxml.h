@@ -20,12 +20,12 @@ struct jio_xml_element_struct
     uint32_t child_capacity;
     jio_xml_element* children;
     jio_string_segment value;
-    jallocator* allocator;
+    jio_allocator_callbacks allocator_callbacks;
 };
 
 jio_result jio_xml_release(jio_xml_element* root);
 
-jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_root, jallocator* allocator);
+jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_root, const jio_allocator_callbacks* allocator_callbacks);
 
 jio_result rmod_serialize_xml(jio_xml_element* root, FILE* f_out);
 

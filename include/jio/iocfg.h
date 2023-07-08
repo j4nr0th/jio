@@ -20,7 +20,7 @@ typedef struct jio_cfg_value_struct jio_cfg_value;
 typedef struct jio_cfg_array_struct jio_cfg_array;
 struct jio_cfg_array_struct
 {
-    jallocator* allocator;
+    jio_allocator_callbacks allocator_callbacks;
     uint32_t capacity;
     uint32_t count;
     jio_cfg_value* values;
@@ -49,7 +49,7 @@ struct jio_cfg_element_struct
 typedef struct jio_cfg_section_struct jio_cfg_section;
 struct jio_cfg_section_struct
 {
-    jallocator* allocator;
+    jio_allocator_callbacks allocator_callbacks;
     jio_string_segment name;
     uint32_t value_count;
     uint32_t value_capacity;
@@ -63,11 +63,11 @@ jio_result jio_cfg_section_insert(jio_cfg_section* parent, jio_cfg_section* chil
 
 jio_result jio_cfg_element_insert(jio_cfg_section* section, jio_cfg_element element);
 
-jio_result jio_cfg_section_create(jallocator* allocator, jio_string_segment name, jio_cfg_section** pp_out);
+jio_result jio_cfg_section_create(const jio_allocator_callbacks* allocator_callbacks, jio_string_segment name, jio_cfg_section** pp_out);
 
 jio_result jio_cfg_section_destroy(jio_cfg_section* section);
 
-jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_root_section, jallocator* allocator);
+jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_root_section, const jio_allocator_callbacks* allocator_callbacks);
 
 jio_result jio_cfg_get_value_by_key(const jio_cfg_section* section, const char* key, jio_cfg_value* p_value);
 
