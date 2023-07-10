@@ -2,8 +2,8 @@
 // Created by jan on 30.6.2023.
 //
 
-#ifndef JTB_IOCSV_H
-#define JTB_IOCSV_H
+#ifndef JTA_IOCSV_H
+#define JTA_IOCSV_H
 #include "ioerr.h"
 #include "iobase.h"
 #include <stdint.h>
@@ -56,4 +56,4 @@ jio_result jio_csv_print_size(const jio_csv_data* data, size_t* p_size, size_t s
 jio_result jio_csv_print(const jio_csv_data* data, size_t* p_usage, char* restrict buffer, const char* separator, uint32_t extra_padding, bool same_width, bool align_left);
 
 
-#endif //JTB_IOCSV_H
+#endif //JTA_IOCSV_H
