@@ -2,8 +2,8 @@
 // Created by jan on 30.6.2023.
 //
 
-#ifndef JTA_IOERR_H
-#define JTA_IOERR_H
+#ifndef JIO_IOERR_H
+#define JIO_IOERR_H
 
 
 enum jio_result_enum : unsigned
@@ -37,4 +37,4 @@ typedef enum jio_result_enum jio_result;
 const char* jio_result_to_str(jio_result res);
 
 
-#endif //JTA_IOERR_H
+#endif //JIO_IOERR_H
