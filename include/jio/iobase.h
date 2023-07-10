@@ -2,8 +2,8 @@
 // Created by jan on 30.6.2023.
 //
 
-#ifndef JTB_IOBASE_H
-#define JTB_IOBASE_H
+#ifndef JIO_IOBASE_H
+#define JIO_IOBASE_H
 #include <stddef.h>
 #include <limits.h>
 #include <jdm.h>
@@ -72,4 +72,4 @@ jio_result jio_memory_file_count_non_empty_lines(const jio_memory_file* file, ui
 
 void jio_memory_file_destroy(jio_memory_file* p_file_out);
 
-#endif //JTB_IOBASE_H
+#endif //JIO_IOBASE_H

@@ -270,7 +270,7 @@ static void print_xml_element_to_file(const jio_xml_element * e, const uint32_t 
     JDM_LEAVE_FUNCTION;
 }
 
-jio_result rmod_serialize_xml(jio_xml_element* root, FILE* f_out)
+jio_result jio_serialize_xml(jio_xml_element* root, FILE* f_out)
 {
     JDM_ENTER_FUNCTION;
     fprintf(f_out, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
