@@ -12,7 +12,7 @@ static void destroy_array(jio_cfg_array* array)
     {
         if (array->values[i].type == JIO_CFG_TYPE_ARRAY)
         {
-            destroy_array(&array->values[i].value_array);
+            destroy_array(&array->values[i].value.value_array);
         }
     }
     array->allocator_callbacks.free(array->allocator_callbacks.param, array->values);
@@ -101,7 +101,7 @@ static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_
                 array.values = new_ptr;
                 array.capacity = new_capacity;
             }
-            if (val_end - segment.begin >= segment.len)
+            if (val_end - segment.begin >= (ptrdiff_t)segment.len)
             {
                 JDM_ERROR("Unmatched pair(s) of array brackets {}");
                 destroy_array(&array);
@@ -114,7 +114,7 @@ static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_
             case ',':
                 if (level == 1)
                 {
-                    while (iswhitespace(*val_begin) && val_begin != val_end)
+                    while (jio_iswhitespace(*val_begin) && val_begin != val_end)
                     {
                         val_begin += 1;
                     }
@@ -142,7 +142,7 @@ static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_
             val_end += 1;
         }
         val_end -= 1;
-        while (iswhitespace(*val_begin) && val_begin != val_end)
+        while (jio_iswhitespace(*val_begin) && val_begin != val_end)
         {
             val_begin += 1;
         }
@@ -157,7 +157,7 @@ static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_
         array.values[array.count++] = element_value;
 
         value->type = JIO_CFG_TYPE_ARRAY;
-        value->value_array = array;
+        value->value.value_array = array;
     }
     else if (*segment.begin == '\"' || *segment.begin == '\'')
     {
@@ -175,7 +175,7 @@ static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_
         }
         segment.len = end_q - segment.begin;
         value->type = JIO_CFG_TYPE_STRING;
-        value->value_string = segment;
+        value->value.value_string = segment;
     }
     else
     {
@@ -186,7 +186,7 @@ static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_
             if (segment.len == 4 || (segment.begin[4] == '#' || segment.begin[4] == ';'))
             {
                 value->type = JIO_CFG_TYPE_BOOLEAN;
-                value->value_boolean = 1;
+                value->value.value_boolean = 1;
                 goto end;
             }
         }
@@ -195,7 +195,7 @@ static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_
             if (segment.len == 5 || (segment.begin[5] == '#' || segment.begin[5] == ';'))
             {
                 value->type = JIO_CFG_TYPE_BOOLEAN;
-                value->value_boolean = 0;
+                value->value.value_boolean = 0;
                 goto end;
             }
         }
@@ -209,7 +209,7 @@ static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_
                 if (end == segment.begin + segment.len && (*end == '#' || *end == ';'))
                 {
                     value->type = JIO_CFG_TYPE_REAL;
-                    value->value_real = v_real;
+                    value->value.value_real = v_real;
                     goto end;
                 }
             }
@@ -220,20 +220,28 @@ static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_
                 if (end == segment.begin + segment.len && (*end == '#' || *end == ';'))
                 {
                     value->type = JIO_CFG_TYPE_INT;
-                    value->value_int = v_int;
+                    value->value.value_int = v_int;
                     goto end;
                 }
             }
             // it is a string
             value->type = JIO_CFG_TYPE_STRING;
             //  Remove any extra comments
-            const char* new_end = memchr(segment.begin, ';', segment.len) ?: (memchr(segment.begin, '#', segment.len) ?: segment.begin + segment.len);
-            while(iswhitespace(*(new_end - 1)) && new_end != segment.begin)
+            const char* new_end = memchr(segment.begin, ';', segment.len);
+            if (!new_end)
+            {
+                new_end = memchr(segment.begin, '#', segment.len);
+                if (!new_end)
+                {
+                    new_end = segment.begin + segment.len;
+                }
+            }
+            while(jio_iswhitespace(*(new_end - 1)) && new_end != segment.begin)
             {
                 new_end -= 1;
             }
             segment.len = new_end - segment.begin;
-            value->value_string = segment;
+            value->value.value_string = segment;
         }
     }
 
@@ -273,7 +281,7 @@ jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_r
         }
 
         //  Trim whitespace
-        while (iswhitespace(*row_begin) && row_begin != row_end) { ++row_begin; }
+        while (jio_iswhitespace(*row_begin) && row_begin != row_end) { ++row_begin; }
         if (*row_begin == '#' || *row_begin == ';')
         {
             //  The line is a comment
@@ -281,7 +289,7 @@ jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_r
             continue;
         }
 
-        while (iswhitespace(*(row_end - 1)) && row_begin != row_end) { --row_end; }
+        while (jio_iswhitespace(*(row_end - 1)) && row_begin != row_end) { --row_end; }
         if (*row_begin == '[')
         {
             //  new subsection (potentially)
@@ -374,7 +382,7 @@ jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_r
             }
             //  Check what is after the name_end
             row_begin = name_end + 1;
-            while (*row_begin != '\n' && iswhitespace(*row_begin) && row_begin != row_end){ ++row_begin; }
+            while (*row_begin != '\n' && jio_iswhitespace(*row_begin) && row_begin != row_end){ ++row_begin; }
             if (*row_begin != '\n' && *row_begin != '#' && *row_begin != ';')
             {
                 JDM_ERROR("Line %"PRIu32" contains a section name, but also contains other non-comment contents", line_count);
@@ -397,12 +405,12 @@ jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_r
                 }
             }
             const char* value_begin = key_end + 1;
-            while (iswhitespace(*(key_end - 1)) && key_end != row_begin)
+            while (jio_iswhitespace(*(key_end - 1)) && key_end != row_begin)
             {
                 key_end -= 1;
             }
             jio_string_segment key_name = {.begin = row_begin, .len = key_end - row_begin};
-            while (iswhitespace(*value_begin))
+            while (jio_iswhitespace(*value_begin))
             {
                 value_begin += 1;
                 if (value_begin == row_end)
@@ -426,7 +434,7 @@ jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_r
                 JDM_ERROR("Could not insert key-element pair into subsection");
                 if (val.type == JIO_CFG_TYPE_ARRAY)
                 {
-                    destroy_array(&val.value_array);
+                    destroy_array(&val.value.value_array);
                 }
                 goto failed;
             }
@@ -456,7 +464,7 @@ jio_result jio_cfg_section_destroy(jio_cfg_section* section)
     {
         if (section->value_array[i].value.type == JIO_CFG_TYPE_ARRAY)
         {
-            destroy_array(&section->value_array[i].value.value_array);
+            destroy_array(&section->value_array[i].value.value.value_array);
         }
     }
     section->allocator_callbacks.free(section->allocator_callbacks.param, section->value_array);
@@ -516,7 +524,7 @@ jio_result jio_cfg_get_value_by_key(const jio_cfg_section* section, const char* 
     }
     for (uint32_t i = 0; i < section->value_count; ++i)
     {
-        if (string_segment_equal_str(&section->value_array[i].key, key))
+        if (jio_string_segment_equal_str(&section->value_array[i].key, key))
         {
             *p_value = section->value_array[i].value;
             JDM_LEAVE_FUNCTION;
@@ -550,7 +558,7 @@ jio_cfg_get_value_by_key_segment(const jio_cfg_section* section, jio_string_segm
     }
     for (uint32_t i = 0; i < section->value_count; ++i)
     {
-        if (string_segment_equal(&section->value_array[i].key, &key))
+        if (jio_string_segment_equal(&section->value_array[i].key, &key))
         {
             *p_value = section->value_array[i].value;
             JDM_LEAVE_FUNCTION;
@@ -585,7 +593,7 @@ jio_result jio_cfg_get_subsection(const jio_cfg_section* section, const char* su
     }
     for (uint32_t i = 0; i < section->subsection_count; ++i)
     {
-        if (string_segment_equal_str_case(&section->subsection_array[i]->name, subsection_name))
+        if (jio_string_segment_equal_str_case(&section->subsection_array[i]->name, subsection_name))
         {
             *pp_out = section->subsection_array[i];
             JDM_LEAVE_FUNCTION;
@@ -620,7 +628,7 @@ jio_result jio_cfg_get_subsection_segment(
     }
     for (uint32_t i = 0; i < section->subsection_count; ++i)
     {
-        if (string_segment_equal_case(&section->subsection_array[i]->name, &subsection_name))
+        if (jio_string_segment_equal_case(&section->subsection_array[i]->name, &subsection_name))
         {
             *pp_out = section->subsection_array[i];
             JDM_LEAVE_FUNCTION;
@@ -661,13 +669,13 @@ static size_t print_value(char* const restrict base, const jio_cfg_value* const 
     switch (value->type)
     {
     case JIO_CFG_TYPE_INT:
-        pos += sprintf(pos, "%"PRIdMAX"", value->value_int);
+        pos += sprintf(pos, "%"PRIdMAX"", value->value.value_int);
         break;
     case JIO_CFG_TYPE_REAL:
-        pos += sprintf(pos, "%g", value->value_real);
+        pos += sprintf(pos, "%g", value->value.value_real);
         break;
     case JIO_CFG_TYPE_BOOLEAN:
-        if (value->value_boolean)
+        if (value->value.value_boolean)
         {
             //  True
             memcpy(pos, "true", 4); pos += 4;
@@ -679,22 +687,22 @@ static size_t print_value(char* const restrict base, const jio_cfg_value* const 
         }
         break;
     case JIO_CFG_TYPE_STRING:
-        if (*(value->value_string.begin - 1) == '"' || *(value->value_string.begin - 1) == '\'')
+        if (*(value->value.value_string.begin - 1) == '"' || *(value->value.value_string.begin - 1) == '\'')
         {
             *pos = '\"'; ++pos;
-            memcpy(pos, value->value_string.begin, value->value_string.len); pos += value->value_string.len;
+            memcpy(pos, value->value.value_string.begin, value->value.value_string.len); pos += value->value.value_string.len;
             *pos = '\"'; ++pos;
         }
         else
         {
-            memcpy(pos, value->value_string.begin, value->value_string.len); pos += value->value_string.len;
+            memcpy(pos, value->value.value_string.begin, value->value.value_string.len); pos += value->value.value_string.len;
         }
         break;
     case JIO_CFG_TYPE_ARRAY:
         *pos = '{'; ++pos;
         *pos = ' '; ++pos;
         {
-            const jio_cfg_array* const array = &value->value_array;
+            const jio_cfg_array* const array = &value->value.value_array;
             if (array->count)
             {
                 //  Print first element
@@ -823,13 +831,13 @@ static size_t size_value(const jio_cfg_value* const restrict value)
     switch (value->type)
     {
     case JIO_CFG_TYPE_INT:
-        pos += snprintf(NULL, 0, "%"PRIdMAX"", value->value_int);
+        pos += snprintf(NULL, 0, "%"PRIdMAX"", value->value.value_int);
         break;
     case JIO_CFG_TYPE_REAL:
-        pos += snprintf(NULL, 0, "%g", value->value_real);
+        pos += snprintf(NULL, 0, "%g", value->value.value_real);
         break;
     case JIO_CFG_TYPE_BOOLEAN:
-        if (value->value_boolean)
+        if (value->value.value_boolean)
         {
             //  True
             pos += 4;
@@ -841,18 +849,18 @@ static size_t size_value(const jio_cfg_value* const restrict value)
         }
         break;
     case JIO_CFG_TYPE_STRING:
-        if (*(value->value_string.begin - 1) == '"' || *(value->value_string.begin - 1) == '\'')
+        if (*(value->value.value_string.begin - 1) == '"' || *(value->value.value_string.begin - 1) == '\'')
         {
             ++pos;
             ++pos;
         }
-        pos += value->value_string.len;
+        pos += value->value.value_string.len;
         break;
     case JIO_CFG_TYPE_ARRAY:
         ++pos;
         ++pos;
         {
-            const jio_cfg_array* const array = &value->value_array;
+            const jio_cfg_array* const array = &value->value.value_array;
             if (array->count)
             {
                 //  Print first element

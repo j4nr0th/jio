@@ -66,7 +66,7 @@ static void* file_to_memory(const char* filename, size_t* p_out_size, int write,
     if (fd < 0)
     {
         JDM_ERROR("Could not open a file descriptor for file \"%s\" (perms: %s), reason: %s", filename,
-                  write ? (read ? "O_RDWR" : "O_WRONLY") : (read ? "O_RDONLY" : "0"), strerror(errno));
+                  write ? ("O_RDWR") : ("O_RDONLY"), strerror(errno));
         goto end;
     }
     size_t size;
@@ -106,7 +106,7 @@ static void* file_to_memory(const char* filename, size_t* p_out_size, int write,
     if (ptr == MAP_FAILED)
     {
         JDM_ERROR("Failed mapping file \"%s\" to memory (prot: %s), reason: %s", filename,
-                  write ? (read ? "PROT_READ|PROT_WRITE" : "PROT_WRITE") : (read ? "PROT_READ" : "0"), strerror(errno));
+                  write ? ("PROT_READ|PROT_WRITE") : ("PROT_READ"), strerror(errno));
         ptr = NULL;
         goto end;
     }
@@ -260,29 +260,29 @@ void jio_memory_file_destroy(jio_memory_file* p_file_out)
     file_from_memory(p_file_out->ptr, p_file_out->file_size);
 }
 
-bool string_segment_equal(const jio_string_segment* first, const jio_string_segment* second)
+bool jio_string_segment_equal(const jio_string_segment* first, const jio_string_segment* second)
 {
     return first->len == second->len && (memcmp(first->begin, second->begin, first->len) == 0);
 }
 
-bool string_segment_equal_case(const jio_string_segment* first, const jio_string_segment* second)
+bool jio_string_segment_equal_case(const jio_string_segment* first, const jio_string_segment* second)
 {
     return first->len == second->len && (strncasecmp((const char*)first->begin, (const char*)second->begin, first->len) == 0);
 }
 
-bool string_segment_equal_str(const jio_string_segment* first, const char* str)
+bool jio_string_segment_equal_str(const jio_string_segment* first, const char* str)
 {
     const size_t len = strlen(str);
     return first->len == len && (memcmp(first->begin, str, len) == 0);
 }
 
-bool string_segment_equal_str_case(const jio_string_segment* first, const char* str)
+bool jio_string_segment_equal_str_case(const jio_string_segment* first, const char* str)
 {
     const size_t len = strlen(str);
     return first->len == len && (strncasecmp((const char*)first->begin, str, len) == 0);
 }
 
-bool iswhitespace(unsigned c)
+bool jio_iswhitespace(unsigned c)
 {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
@@ -374,7 +374,7 @@ jio_result jio_memory_file_count_non_empty_lines(const jio_memory_file* file, ui
 
         while (ptr < end_of_line)
         {
-            if (*ptr && !iswhitespace(*ptr))
+            if (*ptr && !jio_iswhitespace(*ptr))
             {
                 count += 1;
                 break;
