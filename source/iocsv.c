@@ -72,13 +72,13 @@ static inline jio_result extract_row_entries(const uint32_t expected_elements, c
         {
             jio_string_segment segment = p_out[i];
             //  Trim front whitespace
-            while (iswhitespace(*segment.begin) && segment.len)
+            while (jio_iswhitespace(*segment.begin) && segment.len)
             {
                 segment.begin += 1;
                 segment.len -= 1;
             }
             //  Trim back whitespace
-            while (iswhitespace(*(segment.begin + segment.len - 1)) && segment.len)
+            while (jio_iswhitespace(*(segment.begin + segment.len - 1)) && segment.len)
             {
                 segment.len -= 1;
             }
@@ -139,7 +139,7 @@ jio_result jio_parse_csv(
 
     //  Count columns in the csv file
     size_t sep_len = strlen(separator);
-    const uint32_t column_count = count_row_entries(row_begin, row_end ?: mem_file->ptr + mem_file->file_size, separator,
+    const uint32_t column_count = count_row_entries(row_begin, row_end ? row_end : (const char*)mem_file->ptr + mem_file->file_size, separator,
                                                sep_len);
     uint32_t row_capacity = 128;
     uint32_t row_count = 0;
@@ -176,7 +176,7 @@ jio_result jio_parse_csv(
 
         row_count += 1;
         //  Move to the next row
-        if (row_end == mem_file->ptr + mem_file->file_size)
+        if (row_end == (const char*)mem_file->ptr + mem_file->file_size)
         {
             break;
         }
@@ -330,7 +330,7 @@ jio_result jio_csv_get_column_by_name(const jio_csv_data* data, const char* name
     for (uint32_t i = 0; i < data->column_count; ++i)
     {
         const jio_csv_column* column = data->columns + i;
-        if (string_segment_equal_str(&column->header, name))
+        if (jio_string_segment_equal_str(&column->header, name))
         {
 #ifndef NDEBUG
             if (idx != UINT32_MAX)
@@ -392,7 +392,7 @@ jio_result jio_csv_get_column_by_name_segment(
     for (uint32_t i = 0; i < data->column_count; ++i)
     {
         const jio_csv_column* column = data->columns + i;
-        if (string_segment_equal(&column->header, name))
+        if (jio_string_segment_equal(&column->header, name))
         {
 #ifndef NDEBUG
             if (idx != UINT32_MAX)
@@ -867,7 +867,7 @@ jio_result jio_process_csv_exact(
     size_t sep_len = strlen(separator);
     {
         const uint32_t real_column_count = count_row_entries(
-                row_begin, row_end ?: mem_file->ptr + mem_file->file_size, separator, sep_len);
+                row_begin, row_end ? row_end : (const char*)mem_file->ptr + mem_file->file_size, separator, sep_len);
         if (real_column_count != column_count)
         {
             JDM_ERROR("Csv file has %"PRIu32" columns, but %"PRIu32" were specified", real_column_count, column_count);
@@ -881,6 +881,20 @@ jio_result jio_process_csv_exact(
         res = JIO_RESULT_BAD_ALLOC;
         JDM_ERROR("Could not allocate memory for csv parsing");
         goto end;
+    }
+    if ((res = extract_row_entries(column_count, row_begin, row_end, separator, sep_len, true, segments)) != JIO_RESULT_SUCCESS)
+    {
+        JDM_ERROR("Failed extracting the headers from CSV file \"%s\", reason: %s", mem_file->name,
+                  jio_result_to_str(res));
+        goto end;
+    }
+    for (uint32_t i = 0; i < column_count; ++i)
+    {
+        if (!jio_string_segment_equal(segments + i, headers + i))
+        {
+            JDM_ERROR("Column %u had a header \"%.*s\", but \"%.*s\" was expected", i + 1, (int)segments[i].len, segments[i].begin, (int)headers[i].len, headers[i].begin);
+            goto end;
+        }
     }
 
     uint32_t row_count = 0;

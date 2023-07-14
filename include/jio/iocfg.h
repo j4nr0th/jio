@@ -6,7 +6,6 @@
 #define JIO_INI_PARSING_H
 #include "iobase.h"
 
-typedef enum jio_cfg_type_enum jio_cfg_type;
 enum jio_cfg_type_enum
 {
     JIO_CFG_TYPE_BOOLEAN,
@@ -15,6 +14,7 @@ enum jio_cfg_type_enum
     JIO_CFG_TYPE_STRING,
     JIO_CFG_TYPE_ARRAY,
 };
+typedef enum jio_cfg_type_enum jio_cfg_type;
 
 typedef struct jio_cfg_value_struct jio_cfg_value;
 typedef struct jio_cfg_array_struct jio_cfg_array;
@@ -36,7 +36,7 @@ struct jio_cfg_value_struct
         double value_real;
         jio_string_segment value_string;
         jio_cfg_array value_array;
-    };
+    } value;
 };
 
 typedef struct jio_cfg_element_struct jio_cfg_element;

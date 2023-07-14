@@ -6,7 +6,7 @@
 #define JIO_IOERR_H
 
 
-enum jio_result_enum : unsigned
+enum jio_result_enum
 {
     JIO_RESULT_SUCCESS = 0,
     JIO_RESULT_BAD_PATH,
