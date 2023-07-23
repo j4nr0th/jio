@@ -183,7 +183,7 @@ static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_
         //      check if bool
         if (segment.len >= 4 && memcmp(segment.begin, "true", 4) == 0)
         {
-            if (segment.len == 4 || (segment.begin[4] == '#' || segment.begin[4] == ';'))
+            if (segment.len == 4 || (segment.begin[4] == '#' || segment.begin[4] == ';' || jio_iswhitespace(segment.begin[4]) || segment.begin[4] == ','))
             {
                 value->type = JIO_CFG_TYPE_BOOLEAN;
                 value->value.value_boolean = 1;
@@ -192,7 +192,7 @@ static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_
         }
         else if (segment.len >= 5 && memcmp(segment.begin, "false", 5) == 0)
         {
-            if (segment.len == 5 || (segment.begin[5] == '#' || segment.begin[5] == ';'))
+            if (segment.len == 5 || (segment.begin[5] == '#' || segment.begin[5] == ';'|| jio_iswhitespace(segment.begin[5]) || segment.begin[5] == ','))
             {
                 value->type = JIO_CFG_TYPE_BOOLEAN;
                 value->value.value_boolean = 0;
@@ -201,26 +201,26 @@ static jio_result parse_string_segment_to_cfg_element_value(const jio_allocator_
         }
         else
         {
-            //      check if real (double)
             char* end;
-            double v_real = strtod(segment.begin, &end);
-            if (end <= segment.begin + segment.len && end != segment.begin)
-            {
-                if (end == segment.begin + segment.len && (*end == '#' || *end == ';'))
-                {
-                    value->type = JIO_CFG_TYPE_REAL;
-                    value->value.value_real = v_real;
-                    goto end;
-                }
-            }
             //  Check if int
             intmax_t v_int = strtoimax(segment.begin, &end, 0);
             if (end <= segment.begin + segment.len && end != segment.begin)
             {
-                if (end == segment.begin + segment.len && (*end == '#' || *end == ';'))
+                if (end == segment.begin + segment.len)
                 {
                     value->type = JIO_CFG_TYPE_INT;
                     value->value.value_int = v_int;
+                    goto end;
+                }
+            }
+            //      check if real (double)
+            double v_real = strtod(segment.begin, &end);
+            if (end <= segment.begin + segment.len && end != segment.begin)
+            {
+                if (end == segment.begin + segment.len)
+                {
+                    value->type = JIO_CFG_TYPE_REAL;
+                    value->value.value_real = v_real;
                     goto end;
                 }
             }
