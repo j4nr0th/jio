@@ -8,11 +8,15 @@
 
 enum jio_cfg_type_enum
 {
+    JIO_CFG_TYPE_NONE,
+
     JIO_CFG_TYPE_BOOLEAN,
     JIO_CFG_TYPE_INT,
     JIO_CFG_TYPE_REAL,
     JIO_CFG_TYPE_STRING,
     JIO_CFG_TYPE_ARRAY,
+
+    JIO_CFG_TYPE_COUNT,
 };
 typedef enum jio_cfg_type_enum jio_cfg_type;
 
@@ -81,5 +85,7 @@ jio_result jio_cfg_get_subsection_segment(
 jio_result jio_cfg_print_size(const jio_cfg_section* restrict section, size_t delim_size, size_t* restrict p_size, bool indent_subsections, bool equalize_key_length_pad);
 
 jio_result jio_cfg_print(const jio_cfg_section* restrict section, char* restrict buffer, const char* restrict delimiter, size_t* restrict p_real_size, bool indent_subsections, bool equalize_key_length_pad, bool pad_left);
+
+const char* jio_cfg_type_to_str(jio_cfg_type type);
 
 #endif //JIO_INI_PARSING_H

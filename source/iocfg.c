@@ -719,6 +719,7 @@ static size_t print_value(char* const restrict base, const jio_cfg_value* const 
         *pos = ' '; ++pos;
         *pos = '}'; ++pos;
         break;
+    default:break;
     }
 
     return pos - base;
@@ -877,6 +878,7 @@ static size_t size_value(const jio_cfg_value* const restrict value)
         ++pos;
         ++pos;
         break;
+    default:break;
     }
 
     return pos;
@@ -965,4 +967,23 @@ jio_result jio_cfg_print_size(
 
     JDM_LEAVE_FUNCTION;
     return JIO_RESULT_SUCCESS;
+}
+
+static const char* const type_names_array[JIO_CFG_TYPE_COUNT] =
+        {
+            [JIO_CFG_TYPE_NONE] = "Invalid",
+            [JIO_CFG_TYPE_BOOLEAN] = "Boolean",
+            [JIO_CFG_TYPE_INT] = "Integer",
+            [JIO_CFG_TYPE_REAL] = "Real",
+            [JIO_CFG_TYPE_STRING] = "String",
+            [JIO_CFG_TYPE_ARRAY] = "Array",
+        };
+
+const char* jio_cfg_type_to_str(jio_cfg_type type)
+{
+    if (type >= JIO_CFG_TYPE_NONE && type < JIO_CFG_TYPE_COUNT)
+    {
+        return type_names_array[type];
+    }
+    return "Unknown";
 }
