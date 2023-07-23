@@ -101,7 +101,7 @@ static void* file_to_memory(const char* filename, size_t* p_out_size, int write,
         size += (PG_SIZE - extra);
     }
     assert(size % PG_SIZE == 0);
-    ptr = mmap(NULL, size, p_flags, MAP_SHARED, fd, 0);
+    ptr = mmap(NULL, size, p_flags, write ? MAP_SHARED : MAP_PRIVATE, fd, 0);
     close(fd);
     if (ptr == MAP_FAILED)
     {

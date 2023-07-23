@@ -113,13 +113,14 @@ int main()
     ASSERT(res == JIO_RESULT_SUCCESS);
     printf("Space needed: %zu bytes\n", size_needed);
     jio_memory_file f_out;
-    res = jio_memory_file_create("..out.ini", &f_out, 1, 1, size_needed);
+    res = jio_memory_file_create("out.ini", &f_out, 1, 1, size_needed);
+    ASSERT(f_out.can_write);
     ASSERT(res == JIO_RESULT_SUCCESS);
     ASSERT(f_out.file_size >= size_needed);
-    char big_buffer[4096] = {0};
-    res = jio_cfg_print(root, big_buffer, "=", &actual_size, true, false, false);
+//    char big_buffer[4096] = {0};
+    res = jio_cfg_print(root, f_out.ptr, "=", &actual_size, true, false, false);
     ASSERT(res == JIO_RESULT_SUCCESS);
-    fwrite(big_buffer, 1, actual_size, stdout);
+//    fwrite(big_buffer, 1, actual_size, stdout);
     fflush(stdout);
     ASSERT(actual_size <= size_needed);
     jio_memory_file_sync(&f_out, 1);
