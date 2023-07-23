@@ -285,7 +285,7 @@ jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_r
         if (*row_begin == '#' || *row_begin == ';')
         {
             //  The line is a comment
-            row_begin = *row_end ? row_end : row_end + 1;
+            row_begin = *row_end == 0 ? row_end : row_end + 1;
             line_count += 1;
             continue;
         }
