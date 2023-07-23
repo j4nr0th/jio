@@ -277,7 +277,15 @@ jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_r
         }
         if (row_end == row_begin)
         {
-            break;
+            //  Check if there are any other lines
+            if (*row_end == 0)
+            {
+                break;
+            }
+            //  Or empty line
+
+            row_begin = row_end + 1;
+            continue;
         }
 
         //  Trim whitespace
