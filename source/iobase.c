@@ -3,6 +3,7 @@
 //
 
 #include "../include/jio/iobase.h"
+#include "internal.h"
 
 
 #ifndef _WIN32
@@ -16,9 +17,9 @@
 #include <assert.h>
 #include <stdlib.h>
 
-static void* file_to_memory(const char* filename, size_t* p_out_size, int write, int must_create)
+static void*
+file_to_memory(const jio_context* ctx, const char* filename, size_t* p_out_size, int write, int must_create)
 {
-    JDM_ENTER_FUNCTION;
     static long PG_SIZE = 0;
     void* ptr = NULL;
     if (!PG_SIZE)
@@ -26,7 +27,7 @@ static void* file_to_memory(const char* filename, size_t* p_out_size, int write,
         PG_SIZE = sysconf(_SC_PAGESIZE);
         if (PG_SIZE < -1)
         {
-            JDM_ERROR("sysconf did not find page size, reason: %s", strerror(errno));
+            JIO_ERROR(ctx, "sysconf did not find page size, reason: %s", strerror(errno));
             PG_SIZE = 0;
             goto end;
         }
@@ -47,7 +48,7 @@ static void* file_to_memory(const char* filename, size_t* p_out_size, int write,
     {
         if (!write)
         {
-            JDM_ERROR("Create flag was specified for memory file, but write access was not demanded");
+            JIO_ERROR(ctx, "Create flag was specified for memory file, but write access was not demanded");
             goto end;
         }
         o_flags |= O_CREAT;
@@ -65,7 +66,7 @@ static void* file_to_memory(const char* filename, size_t* p_out_size, int write,
     }
     if (fd < 0)
     {
-        JDM_ERROR("Could not open a file descriptor for file \"%s\" (perms: %s), reason: %s", filename,
+        JIO_ERROR(ctx, "Could not open a file descriptor for file \"%s\" (perms: %s), reason: %s", filename,
                   write ? ("O_RDWR") : ("O_RDONLY"), strerror(errno));
         goto end;
     }
@@ -76,7 +77,7 @@ static void* file_to_memory(const char* filename, size_t* p_out_size, int write,
         struct stat fd_stats;
         if (fstat(fd, &fd_stats) < 0)
         {
-            JDM_ERROR("Could not retrieve stats for fd of file \"%s\", reason: %s", filename, strerror(errno));
+            JIO_ERROR(ctx, "Could not retrieve stats for fd of file \"%s\", reason: %s", filename, strerror(errno));
             close(fd);
             goto end;
         }
@@ -87,7 +88,7 @@ static void* file_to_memory(const char* filename, size_t* p_out_size, int write,
         size = *p_out_size;
         if (ftruncate(fd, (off_t)size) != 0)
         {
-            JDM_ERROR("Failed truncating FD to %zu bytes, reason: %s", (size_t)size, JDM_ERRNO_MESSAGE);
+            JIO_ERROR(ctx, "Failed truncating FD to %zu bytes, reason: %s", (size_t)size, strerror(errno));
             close(fd);
             goto end;
         }
@@ -105,61 +106,68 @@ static void* file_to_memory(const char* filename, size_t* p_out_size, int write,
     close(fd);
     if (ptr == MAP_FAILED)
     {
-        JDM_ERROR("Failed mapping file \"%s\" to memory (prot: %s), reason: %s", filename,
+        JIO_ERROR(ctx, "Failed mapping file \"%s\" to memory (prot: %s), reason: %s", filename,
                   write ? ("PROT_READ|PROT_WRITE") : ("PROT_READ"), strerror(errno));
         ptr = NULL;
         goto end;
     }
     *p_out_size = size;
 
-    end:
-    JDM_LEAVE_FUNCTION;
+end:
+
     return ptr;
 }
 
-static void file_from_memory(void* ptr, size_t size)
+static void file_from_memory(const jio_context* ctx, void* ptr, size_t size)
 {
-    JDM_ENTER_FUNCTION;
     int r = munmap(ptr, size);
     if (r < 0)
     {
-        JDM_ERROR("Failed unmapping pointer %p from memory, reason: %s", ptr, strerror(errno));
+        JIO_ERROR(ctx, "Failed unmapping pointer %p from memory, reason: %s", ptr, strerror(errno));
     }
-    JDM_LEAVE_FUNCTION;
 }
 
 
 
 jio_result jio_memory_file_create(
-        const char* filename, jio_memory_file* p_file_out, int write, int can_create, size_t size)
+        const jio_context* ctx,
+        const char* filename, jio_memory_file** p_file_out, int write, int can_create, size_t size)
 {
-    JDM_ENTER_FUNCTION;
     jio_result res = JIO_RESULT_SUCCESS;
+    jio_memory_file* const this = jio_alloc(ctx, sizeof(*this));
+    if (!this)
+    {
+        return JIO_RESULT_BAD_ALLOC;
+    }
+
     int should_create = 0;
-    if (!realpath(filename, p_file_out->name))
+    if (!realpath(filename, this->name))
     {
         if (!can_create)
         {
-            JDM_ERROR("Could not find full path of file \"%s\", reason: %s", filename, strerror(errno));
+            JIO_ERROR(ctx, "Could not find full path of file \"%s\", reason: %s", filename, strerror(errno));
             res = JIO_RESULT_BAD_PATH;
+            jio_free(ctx, this);
             goto end;
         }
         should_create = 1;
     }
 
     size_t real_size = size;
-    void* ptr = file_to_memory(filename, &real_size, write, should_create);
+    void* ptr = file_to_memory(NULL, filename, &real_size, write, should_create);
     if (!ptr)
     {
-        JDM_ERROR("Failed mapping file to memory");
+        JIO_ERROR(ctx, "Failed mapping file to memory");
         res = JIO_RESULT_BAD_MAP;
+        jio_free(ctx, this);
         goto end;
     }
-    p_file_out->can_write = (write != 0);
-    p_file_out->ptr = ptr;
-    p_file_out->file_size = real_size;
+    this->can_write = (write != 0);
+    this->ptr = ptr;
+    this->file_size = real_size;
+    this->ctx = ctx;
+    *p_file_out = this;
 end:
-    JDM_LEAVE_FUNCTION;
     return res;
 }
 
@@ -255,108 +263,42 @@ rmod_result rmod_map_file_to_memory(const char* filename, jio_memory_file* p_fil
 #endif
 
 
-void jio_memory_file_destroy(jio_memory_file* p_file_out)
+void jio_memory_file_destroy(jio_memory_file* mem_file)
 {
-    file_from_memory(p_file_out->ptr, p_file_out->file_size);
-}
-
-bool jio_string_segment_equal(const jio_string_segment* first, const jio_string_segment* second)
-{
-    return first->len == second->len && (memcmp(first->begin, second->begin, first->len) == 0);
-}
-
-bool jio_string_segment_equal_case(const jio_string_segment* first, const jio_string_segment* second)
-{
-    return first->len == second->len && (strncasecmp((const char*)first->begin, (const char*)second->begin, first->len) == 0);
-}
-
-bool jio_string_segment_equal_str(const jio_string_segment* first, const char* str)
-{
-    const size_t len = strlen(str);
-    return first->len == len && (memcmp(first->begin, str, len) == 0);
-}
-
-bool jio_string_segment_equal_str_case(const jio_string_segment* first, const char* str)
-{
-    const size_t len = strlen(str);
-    return first->len == len && (strncasecmp((const char*)first->begin, str, len) == 0);
-}
-
-bool jio_iswhitespace(unsigned c)
-{
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+    file_from_memory(mem_file->ctx, mem_file->ptr, mem_file->file_size);
+    jio_free(mem_file->ctx, mem_file);
 }
 
 jio_result jio_memory_file_sync(const jio_memory_file* file, int sync)
 {
-    JDM_ENTER_FUNCTION;
+    const jio_context* ctx = file->ctx;
     jio_result res = JIO_RESULT_SUCCESS;
-    if (!file)
-    {
-        JDM_ERROR("Mapped file was not provided");
-        res = JIO_RESULT_NULL_ARG;
-        goto end;
-    }
 
     if (msync(file->ptr, file->file_size, sync ? MS_SYNC : MS_ASYNC) != 0)
     {
-        JDM_ERROR("Could not sync memory mapping of file \"%s\" (write allowed: %u), reason: %s", file->name, file->can_write, JDM_ERRNO_MESSAGE);
+        JIO_ERROR(ctx, "Could not sync memory mapping of file \"%s\" (write allowed: %u), reason: %s", file->name, file->can_write,
+                  strerror(errno));
         res = JIO_RESULT_BAD_ACCESS;
     }
 
-end:
-    JDM_LEAVE_FUNCTION;
     return res;
 }
 
-jio_result jio_memory_file_count_lines(const jio_memory_file* file, uint32_t* p_out)
+unsigned jio_memory_file_count_lines(const jio_memory_file* file)
 {
-    JDM_ENTER_FUNCTION;
-    if (!file || !p_out)
-    {
-        if (!file)
-        {
-            JDM_ERROR("Memory file was not provided");
-        }
-        if (!p_out)
-        {
-            JDM_ERROR("Output file was not provided");
-        }
-        JDM_LEAVE_FUNCTION;
-        return JIO_RESULT_NULL_ARG;
-    }
-
-    uint32_t count = 1;
+    unsigned count = 1;
     for (const char* ptr = file->ptr; ptr; ptr = memchr(ptr, '\n', file->file_size - (ptr - (const char*)file->ptr)))
     {
         count += 1;
         ptr += 1;
     }
 
-    *p_out = count;
-
-    JDM_LEAVE_FUNCTION;
-    return JIO_RESULT_SUCCESS;
+    return count;
 }
 
-jio_result jio_memory_file_count_non_empty_lines(const jio_memory_file* file, uint32_t* p_out)
+unsigned jio_memory_file_count_non_empty_lines(const jio_memory_file* file)
 {
-    JDM_ENTER_FUNCTION;
-    if (!file || !p_out)
-    {
-        if (!file)
-        {
-            JDM_ERROR("Memory file was not provided");
-        }
-        if (!p_out)
-        {
-            JDM_ERROR("Output file was not provided");
-        }
-        JDM_LEAVE_FUNCTION;
-        return JIO_RESULT_NULL_ARG;
-    }
-
-    uint32_t count = 1;
+    unsigned count = 1;
     const char* ptr = file->ptr;
     const char* const end = (const char*)file->ptr + file->file_size;
     for (;;)
@@ -390,9 +332,54 @@ jio_result jio_memory_file_count_non_empty_lines(const jio_memory_file* file, ui
         }
     }
 
-    *p_out = count;
+    return count;
+}
 
-    JDM_LEAVE_FUNCTION;
+jio_result jio_context_create(const jio_context_create_info* create_info, jio_context** p_context)
+{
+    jio_context_create_info info = *create_info;
+    create_info = NULL;
+    if (!info.error_callbacks)
+    {
+        info.error_callbacks = &DEFAULT_ERROR_CALLBACKS;
+    }
+    if (!info.allocator_callbacks)
+    {
+        info.allocator_callbacks = &DEFAULT_ALLOCATOR_CALLBACKS;
+    }
+    if (!info.stack_allocator_callbacks)
+    {
+        info.stack_allocator_callbacks = info.allocator_callbacks;
+    }
+
+    jio_context* const this = info.allocator_callbacks->alloc(info.allocator_callbacks->param, sizeof(*this));
+    if (!this)
+    {
+        return JIO_RESULT_BAD_ALLOC;
+    }
+
+    this->allocator_callbacks = *info.allocator_callbacks;
+    this->stack_allocator_callbacks = *info.stack_allocator_callbacks;
+    this->error_callbacks = *info.error_callbacks;
+    *p_context = this;
+
     return JIO_RESULT_SUCCESS;
+}
+
+void jio_context_destroy(jio_context* ctx)
+{
+    jio_free(ctx, ctx);
+}
+
+jio_memory_file_info jio_memory_file_get_info(const jio_memory_file* file)
+{
+    const jio_memory_file_info result =
+            {
+            .size = file->file_size,
+            .memory = file->ptr,
+            .can_write = file->can_write,
+            .full_name = file->name,
+            };
+    return result;
 }
 

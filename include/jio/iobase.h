@@ -6,70 +6,69 @@
 #define JIO_IOBASE_H
 #include <stddef.h>
 #include <limits.h>
-#include <jdm.h>
+#include <stdint.h>
 #include <stdbool.h>
 #include "ioerr.h"
 
-typedef struct jio_memory_file_struct jio_memory_file;
+typedef struct jio_memory_file_T jio_memory_file;
 
-struct jio_memory_file_struct
-{
-    uint32_t can_write:1;
-    void* ptr;
-    size_t file_size;
-#ifndef _WIN32
-    char name[PATH_MAX];
-#else
-    char name[4096];
-#endif
-};
-
-typedef struct jio_string_segment_struct jio_string_segment;
-struct jio_string_segment_struct
+typedef struct jio_string_segment_T jio_string_segment;
+struct jio_string_segment_T
 {
     const char* begin;
     size_t len;
 };
 
-typedef struct jio_allocator_callbacks_struct jio_allocator_callbacks;
-struct jio_allocator_callbacks_struct
+typedef struct jio_allocator_callbacks_T jio_allocator_callbacks;
+struct jio_allocator_callbacks_T
 {
-    void* (*alloc)(void* param, uint64_t size);
+    void* (*alloc)(void* param, size_t size);
     void (*free)(void* param, void* ptr);
-    void* (*realloc)(void* param, void* ptr, uint64_t new_size);
+    void* (*realloc)(void* param, void* ptr, size_t new_size);
     void* param;
 };
 
-typedef struct jio_stack_allocator_callbacks_struct jio_stack_allocator_callbacks;
-struct jio_stack_allocator_callbacks_struct
+typedef struct jio_error_callbacks_T jio_error_callbacks;
+struct jio_error_callbacks_T
 {
-    void* (*alloc)(void* param, uint64_t size);
-    void (*free)(void* param, void* ptr);
-    void* (*realloc)(void* param, void* ptr, uint64_t new_size);
-    void* (*save)(void* param);
-    void (*restore)(void* param, void* state);
-    void* param;
+    void (*report)(void* state, const char* msg, const char* file, int line, const char* function);
+    void* state;
 };
 
-bool jio_iswhitespace(unsigned c);
+typedef struct jio_context_T jio_context;
 
-bool jio_string_segment_equal(const jio_string_segment* first, const jio_string_segment* second);
+typedef struct jio_context_create_info_T jio_context_create_info;
+struct jio_context_create_info_T
+{
+    const jio_allocator_callbacks*  allocator_callbacks;
+    const jio_allocator_callbacks*  stack_allocator_callbacks;
+    const jio_error_callbacks*      error_callbacks;
+};
 
-bool jio_string_segment_equal_case(const jio_string_segment* first, const jio_string_segment* second);
+typedef struct jio_memory_file_info_T jio_memory_file_info;
+struct jio_memory_file_info_T
+{
+    const char* full_name;
+    unsigned char* memory;
+    int can_write;
+    size_t size;
+};
 
-bool jio_string_segment_equal_str(const jio_string_segment* first, const char* str);
+jio_result jio_context_create(const jio_context_create_info* create_info, jio_context** p_context);
 
-bool jio_string_segment_equal_str_case(const jio_string_segment* first, const char* str);
+void jio_context_destroy(jio_context* ctx);
 
 jio_result jio_memory_file_create(
-        const char* filename, jio_memory_file* p_file_out, int write, int can_create, size_t size);
+        const jio_context* ctx, const char* filename, jio_memory_file** p_file_out, int write, int can_create, size_t size);
 
 jio_result jio_memory_file_sync(const jio_memory_file* file, int sync);
 
-jio_result jio_memory_file_count_lines(const jio_memory_file* file, uint32_t* p_out);
+unsigned jio_memory_file_count_lines(const jio_memory_file* file);
 
-jio_result jio_memory_file_count_non_empty_lines(const jio_memory_file* file, uint32_t* p_out);
+unsigned jio_memory_file_count_non_empty_lines(const jio_memory_file* file);
 
-void jio_memory_file_destroy(jio_memory_file* p_file_out);
+void jio_memory_file_destroy(jio_memory_file* mem_file);
+
+jio_memory_file_info jio_memory_file_get_info(const jio_memory_file* file);
 
 #endif //JIO_IOBASE_H
