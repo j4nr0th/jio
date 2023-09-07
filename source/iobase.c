@@ -16,6 +16,7 @@
 #include <string.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 static void*
 file_to_memory(const jio_context* ctx, const char* filename, size_t* p_out_size, int write, int must_create)
@@ -383,6 +384,47 @@ unsigned jio_memory_file_count_non_empty_lines(const jio_memory_file* file)
 
     return count;
 }
+static void* default_alloc(void* state, size_t size)
+{
+    (void) state;
+    assert(state == (void*)0xBadBabe);
+    return malloc(size);
+}
+
+static void* default_realloc(void* state, void* ptr, size_t new_size)
+{
+    (void) state;
+    assert(state == (void*)0xBadBabe);
+    return realloc(ptr, new_size);
+}
+
+static void default_free(void* state, void* ptr)
+{
+    (void) state;
+    assert(state == (void*)0xBadBabe);
+    free(ptr);
+}
+
+static const jio_allocator_callbacks DEFAULT_ALLOCATOR_CALLBACKS =
+        {
+                .alloc = default_alloc,
+                .realloc = default_realloc,
+                .free = default_free,
+                .param = (void*)0xBadBabe,
+        };
+
+static void default_report(void* state, const char* msg, const char* file, int line, const char* function)
+{
+    (void) state;
+    assert(state == (void*)0xC001Cafe);
+    (void)fprintf(stderr, "JIO error (%s:%d - %s): \"%s\"\n", file, line, function, msg);
+}
+
+static const jio_error_callbacks DEFAULT_ERROR_CALLBACKS =
+        {
+                .report = default_report,
+                .state = (void*) 0xC001Cafe
+        };
 
 jio_result jio_context_create(const jio_context_create_info* create_info, jio_context** p_context)
 {
