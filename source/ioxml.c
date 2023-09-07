@@ -5,8 +5,6 @@
 #include "internal.h"
 
 #include <stdbool.h>
-#include <libgen.h>
-#include <unistd.h>
 #include <assert.h>
 #include <string.h>
 

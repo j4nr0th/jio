@@ -20,16 +20,16 @@ enum jio_cfg_type_enum
 };
 typedef enum jio_cfg_type_enum jio_cfg_type;
 
-typedef struct jio_cfg_value_struct jio_cfg_value;
-typedef struct jio_cfg_array_struct jio_cfg_array;
-struct jio_cfg_array_struct
+typedef struct jio_cfg_value_T jio_cfg_value;
+typedef struct jio_cfg_array_T jio_cfg_array;
+struct jio_cfg_array_T
 {
     unsigned capacity;
     unsigned count;
     jio_cfg_value* values;
 };
 
-struct jio_cfg_value_struct
+struct jio_cfg_value_T
 {
     jio_cfg_type type;
     union
@@ -42,14 +42,14 @@ struct jio_cfg_value_struct
     } value;
 };
 
-typedef struct jio_cfg_element_struct jio_cfg_element;
-struct jio_cfg_element_struct
+typedef struct jio_cfg_element_T jio_cfg_element;
+struct jio_cfg_element_T
 {
     jio_string_segment key;
     jio_cfg_value value;
 };
 
-typedef struct jio_cfg_section_struct jio_cfg_section;
+typedef struct jio_cfg_section_T jio_cfg_section;
 
 jio_result jio_cfg_section_insert(const jio_context* ctx, jio_cfg_section* parent, jio_cfg_section* child);
 
@@ -80,5 +80,7 @@ jio_cfg_print(
         bool equalize_key_length_pad, bool pad_left);
 
 const char* jio_cfg_type_to_str(jio_cfg_type type);
+
+jio_string_segment jio_cfg_section_get_name(const jio_cfg_section* section);
 
 #endif //JIO_INI_PARSING_H

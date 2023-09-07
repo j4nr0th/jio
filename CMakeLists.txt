@@ -14,6 +14,8 @@ enable_testing()
 add_subdirectory(source/tests)
 if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
     target_compile_options(jio PRIVATE -Wall -Wextra -Werror)
+elseif (CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+    target_compile_definitions(jio PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif ()
 target_sources(jio PUBLIC FILE_SET jio_header_list TYPE HEADERS BASE_DIRS include/jio FILES ${JIO_HEADER_FILES})
 

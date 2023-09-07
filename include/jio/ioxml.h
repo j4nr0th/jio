@@ -7,8 +7,8 @@
 #include <stdio.h>
 #include "iobase.h"
 
-typedef struct jio_xml_element_struct jio_xml_element;
-struct jio_xml_element_struct
+typedef struct jio_xml_element_T jio_xml_element;
+struct jio_xml_element_T
 {
     unsigned depth;
     jio_string_segment name;
