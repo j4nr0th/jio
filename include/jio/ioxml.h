@@ -10,22 +10,21 @@
 typedef struct jio_xml_element_struct jio_xml_element;
 struct jio_xml_element_struct
 {
-    uint32_t depth;
+    unsigned depth;
     jio_string_segment name;
-    uint32_t attrib_capacity;
-    uint32_t attrib_count;
+    unsigned attrib_capacity;
+    unsigned attrib_count;
     jio_string_segment* attribute_names;
     jio_string_segment* attribute_values;
-    uint32_t child_count;
-    uint32_t child_capacity;
+    unsigned child_count;
+    unsigned child_capacity;
     jio_xml_element* children;
     jio_string_segment value;
-    jio_allocator_callbacks allocator_callbacks;
 };
 
-jio_result jio_xml_release(jio_xml_element* root);
+void jio_xml_release(const jio_context* ctx, jio_xml_element* root);
 
-jio_result jio_xml_parse(const jio_memory_file* mem_file, jio_xml_element* p_root, const jio_allocator_callbacks* allocator_callbacks);
+jio_result jio_xml_parse(const jio_context* ctx, const jio_memory_file* mem_file, jio_xml_element** p_root);
 
 jio_result jio_serialize_xml(jio_xml_element* root, FILE* f_out);
 

@@ -2,16 +2,15 @@
 // Created by jan on 30.6.2023.
 //
 
-#include <jdm.h>
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
 #include "../include/jio/iocsv.h"
+#include "internal.h"
 
 
 struct jio_csv_data_struct
 {
-    jio_allocator_callbacks allocator_callbacks;                  //  Allocator used by this csv
     uint32_t column_capacity;               //  Max size of columns before resizing the array
     uint32_t column_count;                  //  Number of columns used
     uint32_t column_length;                 //  Length of each column
@@ -43,9 +42,10 @@ static inline uint32_t count_row_entries(const char* const csv, const char* cons
     return so_far + 1;
 }
 
-static inline jio_result extract_row_entries(const uint32_t expected_elements, const char* const row_begin, const char* const row_end, const char* restrict sep, size_t sep_len, const bool trim, jio_string_segment* const p_out)
+static inline jio_result extract_row_entries(
+        const jio_context* ctx, const uint32_t expected_elements, const char* const row_begin,
+        const char* const row_end, const char* sep, size_t sep_len, const bool trim, jio_string_segment* const p_out)
 {
-    JDM_ENTER_FUNCTION;
     uint32_t i;
     const char* end = NULL, *begin = row_begin;
     for (i = 0; i < expected_elements && end < row_end; ++i)
@@ -56,12 +56,12 @@ static inline jio_result extract_row_entries(const uint32_t expected_elements, c
     
     if (i != expected_elements)
     {
-        JDM_ERROR("Row contained only %u elements instead of %u", i, expected_elements);
+        JIO_ERROR(ctx, "Row contained only %u elements instead of %u", i, expected_elements);
         return JIO_RESULT_BAD_CSV_FORMAT;
     }
     if (end < row_end)
     {
-        JDM_ERROR("Row contained %u elements instead of %u", count_row_entries(row_begin, row_end, sep, sep_len), expected_elements);
+        JIO_ERROR(ctx, "Row contained %u elements instead of %u", count_row_entries(row_begin, row_end, sep, sep_len), expected_elements);
         return JIO_RESULT_BAD_CSV_FORMAT;
     }
 
@@ -85,45 +85,18 @@ static inline jio_result extract_row_entries(const uint32_t expected_elements, c
             p_out[i] = segment;
         }
     }
-    
-    JDM_LEAVE_FUNCTION;
+
     return JIO_RESULT_SUCCESS;
 }
 
 jio_result jio_parse_csv(
-        const jio_memory_file* mem_file, const char* restrict separator, bool trim_whitespace, bool has_headers,
-        jio_csv_data** pp_csv, const jio_allocator_callbacks* allocator_callbacks, const jio_stack_allocator_callbacks* stack_callbacks)
+        const jio_context* ctx, const jio_memory_file* mem_file, const char* separator, bool trim_whitespace,
+        bool has_headers, jio_csv_data** pp_csv)
 {
-    JDM_ENTER_FUNCTION;
-    if (!mem_file || !pp_csv || !allocator_callbacks || !stack_callbacks || !separator)
-    {
-        if (!mem_file)
-        {
-            JDM_ERROR("Memory mapped file to parse was not provided");
-        }
-        if (!pp_csv)
-        {
-            JDM_ERROR("Output pointer was null");
-        }
-        if (!allocator_callbacks)
-        {
-            JDM_ERROR("Allocator was not provided");
-        }
-        if (!stack_callbacks)
-        {
-            JDM_ERROR("Linear allocator was not provided");
-        }
-        if (!separator)
-        {
-            JDM_ERROR("Separator was not provided");
-        }
-        JDM_LEAVE_FUNCTION;
-        return JIO_RESULT_NULL_ARG;
-    }
+
     jio_result res;
-    void* const base = stack_callbacks->save(stack_callbacks->param);
-    jio_csv_data* csv = NULL;
-    csv = allocator_callbacks->alloc(allocator_callbacks->param, sizeof(*csv));
+    jio_string_segment* segments = NULL;
+    jio_csv_data* const csv = jio_alloc(ctx, sizeof(*csv));
     if (!csv)
     {
         res = JIO_RESULT_BAD_ALLOC;
@@ -131,7 +104,6 @@ jio_result jio_parse_csv(
     }
 
     memset(csv, 0, sizeof(*csv));
-    csv->allocator_callbacks = *allocator_callbacks;
 
     //  Parse the first row
     const char* row_begin = mem_file->ptr;
@@ -143,11 +115,11 @@ jio_result jio_parse_csv(
                                                sep_len);
     uint32_t row_capacity = 128;
     uint32_t row_count = 0;
-    jio_string_segment* segments = stack_callbacks->alloc(stack_callbacks->param, sizeof(*segments) * row_capacity * column_count);
+    segments = jio_alloc_stack(ctx, sizeof(*segments) * row_capacity * column_count);
     if (!segments)
     {
         res = JIO_RESULT_BAD_ALLOC;
-        JDM_ERROR("Could not allocate memory for csv parsing");
+        JIO_ERROR(ctx, "Could not allocate memory for csv parsing");
         goto end;
     }
 
@@ -157,20 +129,21 @@ jio_result jio_parse_csv(
         if (row_capacity == row_count)
         {
             const uint32_t new_capacity = row_capacity + 128;
-            jio_string_segment* const new_ptr = stack_callbacks->realloc(stack_callbacks->param, segments, sizeof(*segments) * new_capacity * column_count);
+            jio_string_segment* const new_ptr = jio_realloc_stack(ctx, segments, sizeof(*segments) * new_capacity * column_count);
             if (!new_ptr)
             {
                 res = JIO_RESULT_BAD_ALLOC;
-                JDM_ERROR("Could not reallocate memory for csv parsing");
+                JIO_ERROR(ctx, "Could not reallocate memory for csv parsing");
                 goto end;
             }
             segments = new_ptr;
             row_capacity = new_capacity;
         }
 
-        if ((res = extract_row_entries(column_count, row_begin, row_end, separator, sep_len, trim_whitespace, segments + row_count * column_count)))
+        if ((res = extract_row_entries(ctx, column_count, row_begin, row_end, separator, sep_len, trim_whitespace,
+                                       segments + row_count * column_count)))
         {
-            JDM_ERROR("Failed parsing row %u of CSV file \"%s\", reason: %s", row_count + 1, mem_file->name, jio_result_to_str(res));
+            JIO_ERROR(ctx, "Failed parsing row %u of CSV file \"%s\", reason: %s", row_count + 1, mem_file->name, jio_result_to_str(res));
             goto end;
         }
 
@@ -196,25 +169,25 @@ jio_result jio_parse_csv(
     csv->column_count = column_count;
     csv->column_length = row_count - (has_headers ? 1 : 0);
 
-    jio_csv_column* const columns = allocator_callbacks->alloc(allocator_callbacks->param, sizeof(*columns) * column_count);
+    jio_csv_column* const columns = jio_alloc(ctx, sizeof(*columns) * column_count);
     if (!columns)
     {
         res = JIO_RESULT_BAD_ALLOC;
-        JDM_ERROR("Could not allocate memory for csv column array");
+        JIO_ERROR(ctx, "Could not allocate memory for csv column array");
         goto end;
     }
     for (uint32_t i = 0; i < column_count; ++i)
     {
         jio_csv_column* const p_column = columns + i;
         p_column->capacity = (p_column->count = csv->column_length);
-        jio_string_segment* const elements = allocator_callbacks->alloc(allocator_callbacks->param, sizeof(*elements) * p_column->count);
+        jio_string_segment* const elements = jio_alloc(ctx, sizeof(*elements) * p_column->count);
         if (!elements)
         {
             for (uint32_t j = 0; j < i; ++j)
             {
-                allocator_callbacks->free(allocator_callbacks->param, columns[j].elements);
+                jio_free(ctx, columns[j].elements);
             }
-            JDM_ERROR("Could not allocate memory for csv column elements");
+            JIO_ERROR(ctx, "Could not allocate memory for csv column elements");
             goto end;
         }
         if (has_headers)
@@ -235,43 +208,31 @@ jio_result jio_parse_csv(
         p_column->header = has_headers ? segments[i] : (jio_string_segment){ .begin = NULL, .len = 0 };
 
     }
-    stack_callbacks->free(stack_callbacks->param, segments);
+    jio_free_stack(ctx, segments);
     csv->columns = columns;
 
     *pp_csv = csv;
-    JDM_LEAVE_FUNCTION;
     return JIO_RESULT_SUCCESS;
+
 end:
-    stack_callbacks->restore(stack_callbacks->param, base);
-    allocator_callbacks->free(allocator_callbacks->param, csv);
-    JDM_LEAVE_FUNCTION;
+    jio_free_stack(ctx, segments);
+    jio_free(ctx, csv);
     return res;
 }
 
-jio_result jio_csv_release(jio_csv_data* data)
+void jio_csv_release(const jio_context* ctx, jio_csv_data* data)
 {
-    JDM_ENTER_FUNCTION;
-    if (!data)
+    for (unsigned i = 0; i < data->column_count; ++i)
     {
-        JDM_ERROR("Csv file was not provided");
-        JDM_LEAVE_FUNCTION;
-        return JIO_RESULT_NULL_ARG;
-    }
-    for (uint32_t i = 0; i < data->column_count; ++i)
-    {
-        data->allocator_callbacks.free(data->allocator_callbacks.param, data->columns[i].elements);
+        jio_free(ctx, data->columns[i].elements);
     }
 
-    data->allocator_callbacks.free(data->allocator_callbacks.param, data->columns);
-    data->allocator_callbacks.free(data->allocator_callbacks.param, data);
-
-    JDM_LEAVE_FUNCTION;
-    return JIO_RESULT_SUCCESS;
+    jio_free(ctx, data->columns);
+    jio_free(ctx, data);
 }
 
-jio_result jio_csv_shape(const jio_csv_data* data, uint32_t* p_rows, uint32_t* p_cols)
+void jio_csv_shape(const jio_csv_data* data, uint32_t* p_rows, uint32_t* p_cols)
 {
-//    JDM_ENTER_FUNCTION;
     if (p_rows)
     {
         *p_rows = data->column_length;
@@ -280,52 +241,22 @@ jio_result jio_csv_shape(const jio_csv_data* data, uint32_t* p_rows, uint32_t* p
     {
         *p_cols = data->column_count;
     }
-//    JDM_LEAVE_FUNCTION;
-    return JIO_RESULT_SUCCESS;
 }
 
 jio_result jio_csv_get_column(const jio_csv_data* data, uint32_t index, const jio_csv_column** pp_column)
 {
-    JDM_ENTER_FUNCTION;
-    if (!pp_column)
-    {
-        JDM_ERROR("Pointer where to store the output was null");
-        JDM_LEAVE_FUNCTION;
-        return JIO_RESULT_NULL_ARG;
-    }
     if (data->column_count <= index)
     {
-        JDM_ERROR("Requested column at index %u from csv that has %u columns", index, data->column_count);
-        JDM_LEAVE_FUNCTION;
         return JIO_RESULT_BAD_INDEX;
     }
     *pp_column = data->columns + index;
-    JDM_LEAVE_FUNCTION;
     return JIO_RESULT_SUCCESS;
 }
 
-jio_result jio_csv_get_column_by_name(const jio_csv_data* data, const char* name, const jio_csv_column** pp_column)
+jio_result jio_csv_get_column_by_name(
+        const jio_context* ctx, const jio_csv_data* data, const char* name, const jio_csv_column** pp_column)
 {
-    JDM_ENTER_FUNCTION;
     jio_result res;
-    if (!data || !name || !pp_column)
-    {
-        if (!data)
-        {
-            JDM_ERROR("Csv file was not provided");
-        }
-        if (!name)
-        {
-            JDM_ERROR("Header name was not provided");
-        }
-        if (!pp_column)
-        {
-            JDM_ERROR("Output pointer was not provided");
-        }
-        JDM_LEAVE_FUNCTION;
-        return JIO_RESULT_NULL_ARG;
-    }
-
     uint32_t idx = UINT32_MAX;
     for (uint32_t i = 0; i < data->column_count; ++i)
     {
@@ -333,14 +264,8 @@ jio_result jio_csv_get_column_by_name(const jio_csv_data* data, const char* name
         if (jio_string_segment_equal_str(&column->header, name))
         {
 #ifndef NDEBUG
-            if (idx != UINT32_MAX)
-            {
-                JDM_WARN("More than one column has a header \"%s\" (%u and %u)", name, idx, i);
-            }
-            else
-            {
-                idx = i;
-            }
+            assert(idx == UINT32_MAX);
+            idx = i;
 #else
             idx = i;
             break;
@@ -350,43 +275,21 @@ jio_result jio_csv_get_column_by_name(const jio_csv_data* data, const char* name
 
     if (idx == UINT32_MAX)
     {
-        JDM_ERROR("Csv file has no header that matches \"%s\"", name);
+        JIO_ERROR(ctx, "Csv file has no header that matches \"%s\"", name);
         res = JIO_RESULT_BAD_CSV_HEADER;
-        goto failed;
+        goto end;
     }
 
     res = jio_csv_get_column(data, idx, pp_column);
-
-    JDM_LEAVE_FUNCTION;
-    return res;
-failed:
-    JDM_LEAVE_FUNCTION;
+end:
     return res;
 }
 
 jio_result jio_csv_get_column_by_name_segment(
-        const jio_csv_data* data, const jio_string_segment* name, const jio_csv_column** pp_column)
+        const jio_context* ctx, const jio_csv_data* data, const jio_string_segment* name,
+        const jio_csv_column** pp_column)
 {
-    JDM_ENTER_FUNCTION;
     jio_result res;
-
-    if (!data || !name || !pp_column)
-    {
-        if (!data)
-        {
-            JDM_ERROR("Csv file was not provided");
-        }
-        if (!name)
-        {
-            JDM_ERROR("Header name was not provided");
-        }
-        if (!pp_column)
-        {
-            JDM_ERROR("Output pointer was not provided");
-        }
-        JDM_LEAVE_FUNCTION;
-        return JIO_RESULT_NULL_ARG;
-    }
 
     uint32_t idx = UINT32_MAX;
     for (uint32_t i = 0; i < data->column_count; ++i)
@@ -395,14 +298,8 @@ jio_result jio_csv_get_column_by_name_segment(
         if (jio_string_segment_equal(&column->header, name))
         {
 #ifndef NDEBUG
-            if (idx != UINT32_MAX)
-            {
-                JDM_WARN("More than one column has a header \"%.*s\" (%u and %u)", (int)name->len, name->begin, idx, i);
-            }
-            else
-            {
-                idx = i;
-            }
+            assert(idx == UINT32_MAX);
+            idx = i;
 #else
             idx = i;
             break;
@@ -412,42 +309,27 @@ jio_result jio_csv_get_column_by_name_segment(
 
     if (idx == UINT32_MAX)
     {
-        JDM_ERROR("Csv file has no header that matches \"%.*s\"", (int)name->len, name->begin);
+        JIO_ERROR(ctx, "Csv file has no header that matches \"%.*s\"", (int)name->len, name->begin);
         res = JIO_RESULT_BAD_CSV_HEADER;
-        goto failed;
+        goto end;
     }
 
     res = jio_csv_get_column(data, idx, pp_column);
 
-    JDM_LEAVE_FUNCTION;
-    return res;
-    failed:
-    JDM_LEAVE_FUNCTION;
+end:
     return res;
 }
 
 jio_result
-jio_csv_add_rows(jio_csv_data* data, uint32_t position, uint32_t row_count, const jio_string_segment* const* rows)
+jio_csv_add_rows(
+        const jio_context* ctx, jio_csv_data* data, uint32_t position, uint32_t row_count,
+        const jio_string_segment* const* rows)
 {
-    JDM_ENTER_FUNCTION;
     jio_result res = JIO_RESULT_SUCCESS;
-    if (!data || !rows)
-    {
-        if (!data)
-        {
-            JDM_ERROR("Csv file was not provided");
-        }
-        if (!rows)
-        {
-            JDM_ERROR("Rows were not provided");
-        }
-        JDM_LEAVE_FUNCTION;
-        return JIO_RESULT_NULL_ARG;
-    }
 
     if (position > data->column_length && position != UINT32_MAX)
     {
-        JDM_ERROR("Rows were to be inserted at position %"PRIu32", but csv data has only %u rows", position, data->column_length);
+        JIO_ERROR(ctx, "Rows were to be inserted at position %"PRIu32", but csv data has only %u rows", position, data->column_length);
         res = JIO_RESULT_BAD_INDEX;
         goto end;
     }
@@ -458,10 +340,10 @@ jio_csv_add_rows(jio_csv_data* data, uint32_t position, uint32_t row_count, cons
         const uint32_t new_capacity = data->columns[0].capacity + (row_count < 64 ? 64 : row_count);
         for (uint32_t i = 0; i < data->column_count; ++i)
         {
-            jio_string_segment* const new_ptr = data->allocator_callbacks.realloc(data->allocator_callbacks.param, data->columns[i].elements, new_capacity * sizeof(*new_ptr));
+            jio_string_segment* const new_ptr = jio_realloc(ctx, data->columns[i].elements, new_capacity * sizeof(*new_ptr));
             if (!new_ptr)
             {
-                JDM_ERROR("Could not reallocate column %u to fit additional %u row elements", i, row_count);
+                JIO_ERROR(ctx, "Could not reallocate column %u to fit additional %u row elements", i, row_count);
                 res = JIO_RESULT_BAD_ALLOC;
                 goto end;
             }
@@ -495,7 +377,6 @@ jio_csv_add_rows(jio_csv_data* data, uint32_t position, uint32_t row_count, cons
         for (uint32_t j = 0; j < row_count; ++j)
         {
             elements[position + j] = rows[j][i];
-            JDM_TRACE("%c", *(volatile char*)rows[j][i].begin);
         }
         column->count += row_count;
     }
@@ -504,31 +385,17 @@ jio_csv_add_rows(jio_csv_data* data, uint32_t position, uint32_t row_count, cons
 
 
 end:
-    JDM_LEAVE_FUNCTION;
     return res;
 }
 
-jio_result jio_csv_add_cols(jio_csv_data* data, uint32_t position, uint32_t col_count, const jio_csv_column* cols)
+jio_result jio_csv_add_cols(
+        const jio_context* ctx, jio_csv_data* data, uint32_t position, uint32_t col_count, const jio_csv_column* cols)
 {
-    JDM_ENTER_FUNCTION;
     jio_result res = JIO_RESULT_SUCCESS;
-    if (!data || !cols)
-    {
-        if (!data)
-        {
-            JDM_ERROR("Csv file was not provided");
-        }
-        if (!cols)
-        {
-            JDM_ERROR("Columns were not provided");
-        }
-        JDM_LEAVE_FUNCTION;
-        return JIO_RESULT_NULL_ARG;
-    }
 
     if (position > data->column_count&& position != UINT32_MAX)
     {
-        JDM_ERROR("Columns were to be inserted at position %"PRIu32", but csv data has only %u columns", position, data->column_count);
+        JIO_ERROR(ctx, "Columns were to be inserted at position %"PRIu32", but csv data has only %u columns", position, data->column_count);
         res = JIO_RESULT_BAD_INDEX;
         goto end;
     }
@@ -537,7 +404,7 @@ jio_result jio_csv_add_cols(jio_csv_data* data, uint32_t position, uint32_t col_
     {
         if (cols[i].count != data->column_length)
         {
-            JDM_ERROR("Column %u to be inserted had a length of %"PRIu32", but others have the length of %u", i, cols[i].count, data->column_length);
+            JIO_ERROR(ctx, "Column %u to be inserted had a length of %"PRIu32", but others have the length of %u", i, cols[i].count, data->column_length);
             bad = true;
         }
     }
@@ -551,10 +418,10 @@ jio_result jio_csv_add_cols(jio_csv_data* data, uint32_t position, uint32_t col_
     if (data->column_count + col_count >= data->column_capacity)
     {
         const uint32_t new_capacity = data->column_capacity + (col_count < 8 ? 8 :  col_count);
-        jio_csv_column* const new_ptr = data->allocator_callbacks.realloc(data->allocator_callbacks.param, data->columns, sizeof(*new_ptr) * new_capacity);
+        jio_csv_column* const new_ptr = jio_realloc(ctx, data->columns, sizeof(*new_ptr) * new_capacity);
         if (!new_ptr)
         {
-            JDM_ERROR("Could not reallocate memory for column array");
+            JIO_ERROR(ctx, "Could not reallocate memory for column array");
             res = JIO_RESULT_BAD_ALLOC;
             goto end;
         }
@@ -579,27 +446,19 @@ jio_result jio_csv_add_cols(jio_csv_data* data, uint32_t position, uint32_t col_
 
     data->column_count += col_count;
 end:
-    JDM_LEAVE_FUNCTION;
     return res;
 }
 
-jio_result jio_csv_remove_rows(jio_csv_data* data, uint32_t position, uint32_t row_count)
+jio_result jio_csv_remove_rows(const jio_context* ctx, jio_csv_data* data, uint32_t position, uint32_t row_count)
 {
     //  Done already?
     if (!row_count || (data && position == data->column_length)) return JIO_RESULT_SUCCESS;
-    JDM_ENTER_FUNCTION;
-    if (!data)
-    {
-        JDM_ERROR("Csv file was not provided");
-        JDM_LEAVE_FUNCTION;
-        return JIO_RESULT_NULL_ARG;
-    }
     jio_result res = JIO_RESULT_SUCCESS;
     //  Check that the range to remove lies within the list of available rows
     const uint32_t begin = position, end = position + row_count;
     if (begin > data->column_length || end > data->column_length)
     {
-        JDM_ERROR("Range of rows to remove is [%"PRIu32", %"PRIu32"), but the csv file only has %"PRIu32" rows", begin, end, data->column_length);
+        JIO_ERROR(ctx, "Range of rows to remove is [%"PRIu32", %"PRIu32"), but the csv file only has %"PRIu32" rows", begin, end, data->column_length);
         res = JIO_RESULT_BAD_INDEX;
         goto end;
     }
@@ -613,27 +472,18 @@ jio_result jio_csv_remove_rows(jio_csv_data* data, uint32_t position, uint32_t r
     }
     data->column_length -= row_count;
 end:
-    JDM_LEAVE_FUNCTION;
     return res;
 }
 
-jio_result jio_csv_remove_cols(jio_csv_data* data, uint32_t position, uint32_t col_count)
+jio_result jio_csv_remove_cols(const jio_context* ctx, jio_csv_data* data, uint32_t position, uint32_t col_count)
 {
     //  Done already?
-    if (!col_count || (data && position == data->column_count)) return JIO_RESULT_SUCCESS;
-    JDM_ENTER_FUNCTION;
-    if (!data)
-    {
-        JDM_ERROR("Csv file was not provided");
-        JDM_LEAVE_FUNCTION;
-        return JIO_RESULT_NULL_ARG;
-    }
     jio_result res = JIO_RESULT_SUCCESS;
     //  Check that the range to remove lies within the list of available rows
     const uint32_t begin = position, end = position + col_count;
     if (begin > data->column_count || end > data->column_count)
     {
-        JDM_ERROR("Range of columns to remove is [%"PRIu32", %"PRIu32"), but the csv file only has %"PRIu32" columns", begin, end, data->column_count);
+        JIO_ERROR(ctx, "Range of columns to remove is [%"PRIu32", %"PRIu32"), but the csv file only has %"PRIu32" columns", begin, end, data->column_count);
         res = JIO_RESULT_BAD_INDEX;
         goto end;
     }
@@ -641,38 +491,25 @@ jio_result jio_csv_remove_cols(jio_csv_data* data, uint32_t position, uint32_t c
     for (uint32_t i = begin; i < end; ++i)
     {
         jio_csv_column* const column = data->columns + i;
-        data->allocator_callbacks.free(data->allocator_callbacks.param, column->elements);
+        jio_free(ctx, column->elements);
     }
     memmove(data->columns + begin, data->columns + end, sizeof(*data->columns) * (data->column_count - end));
     data->column_count -= col_count;
 end:
-    JDM_LEAVE_FUNCTION;
     return res;
 }
 
 jio_result jio_csv_replace_cols(
-        jio_csv_data* data, uint32_t begin, uint32_t count, uint32_t col_count, const jio_csv_column* cols)
+        const jio_context* ctx, jio_csv_data* data, uint32_t begin, uint32_t count, uint32_t col_count,
+        const jio_csv_column* cols)
 {
-    JDM_ENTER_FUNCTION;
     jio_result res = JIO_RESULT_SUCCESS;
-    if (!data || !cols)
-    {
-        if (!data)
-        {
-            JDM_ERROR("Csv file was not provided");
-        }
-        if (!cols)
-        {
-            JDM_ERROR("Columns were not provided");
-        }
-        res = JIO_RESULT_NULL_ARG;
-        goto end;
-    }
+
 
     const uint32_t end = begin + count;
     if (begin >= data->column_count || end >= data->column_count)
     {
-        JDM_ERROR("Columns to be replaced were on the interval [%"PRIu32", %"PRIu32"), but only values on interval [0, %"PRIu32") can be given", begin, end, data->column_count);
+        JIO_ERROR(ctx, "Columns to be replaced were on the interval [%"PRIu32", %"PRIu32"), but only values on interval [0, %"PRIu32") can be given", begin, end, data->column_count);
         res = JIO_RESULT_BAD_INDEX;
         goto end;
     }
@@ -683,10 +520,10 @@ jio_result jio_csv_replace_cols(
     if (d_col + data->column_count >= data->column_capacity)
     {
         const uint32_t new_capacity = data->column_capacity + (d_col < 8 ? 8 : d_col);
-        jio_csv_column* const columns = data->allocator_callbacks.realloc(data->allocator_callbacks.param, data->columns, sizeof(*data->columns) * new_capacity);
+        jio_csv_column* const columns = jio_realloc(ctx, data->columns, sizeof(*data->columns) * new_capacity);
         if (!columns)
         {
-            JDM_ERROR("Could not reallocate memory for columns");
+            JIO_ERROR(ctx, "Could not reallocate memory for columns");
             res = JIO_RESULT_BAD_ALLOC;
             goto end;
         }
@@ -696,7 +533,7 @@ jio_result jio_csv_replace_cols(
 
     for (uint32_t i = begin; i < end; ++i)
     {
-        data->allocator_callbacks.free(data->allocator_callbacks.param, data->columns[i].elements);
+        jio_free(ctx, data->columns[i].elements);
     }
     if (end != data->column_count)
     {
@@ -707,32 +544,19 @@ jio_result jio_csv_replace_cols(
     memcpy(data->columns + begin, cols, sizeof(*cols) * col_count);
     data->column_count += d_col;
 end:
-    JDM_LEAVE_FUNCTION;
     return res;
 }
 
 jio_result jio_csv_replace_rows(
-        jio_csv_data* data, uint32_t begin, uint32_t count, uint32_t row_count, const jio_string_segment* const* rows)
-{    JDM_ENTER_FUNCTION;
+        const jio_context* ctx, jio_csv_data* data, uint32_t begin, uint32_t count, uint32_t row_count,
+        const jio_string_segment* const* rows)
+{
     jio_result res = JIO_RESULT_SUCCESS;
-    if (!data || !rows)
-    {
-        if (!data)
-        {
-            JDM_ERROR("Csv file was not provided");
-        }
-        if (!rows)
-        {
-            JDM_ERROR("Rows were not provided");
-        }
-        res = JIO_RESULT_NULL_ARG;
-        goto end;
-    }
 
     const uint32_t end = begin + count;
     if (begin >= data->column_length || end >= data->column_length)
     {
-        JDM_ERROR("Rows to be replaced were on the interval [%"PRIu32", %"PRIu32"), but only values on interval [0, %"PRIu32") can be given", begin, end, data->column_count);
+        JIO_ERROR(ctx, "Rows to be replaced were on the interval [%"PRIu32", %"PRIu32"), but only values on interval [0, %"PRIu32") can be given", begin, end, data->column_count);
         res = JIO_RESULT_BAD_INDEX;
         goto end;
     }
@@ -746,10 +570,10 @@ jio_result jio_csv_replace_rows(
         {
             jio_csv_column* const column = data->columns + i;
             const uint32_t new_capacity = column->capacity + (d_row < 8 ? 8 : d_row);
-            jio_string_segment* const elements = data->allocator_callbacks.realloc(data->allocator_callbacks.param, column->elements, sizeof(*column->elements) * new_capacity);
+            jio_string_segment* const elements = jio_realloc(ctx, column->elements, sizeof(*column->elements) * new_capacity);
             if (!elements)
             {
-                JDM_ERROR("Could not reallocate memory for column elements");
+                JIO_ERROR(ctx, "Could not reallocate memory for column elements");
                 res = JIO_RESULT_BAD_ALLOC;
                 goto end;
             }
@@ -771,32 +595,13 @@ jio_result jio_csv_replace_rows(
     }
     data->column_length += d_row;
 
-    end:
-    JDM_LEAVE_FUNCTION;
+end:
     return res;
 }
 
 jio_result jio_csv_column_index(const jio_csv_data* data, const jio_csv_column* column, uint32_t* p_idx)
 {
-    JDM_ENTER_FUNCTION;
     jio_result res = JIO_RESULT_SUCCESS;
-    if (!data || !column || !p_idx)
-    {
-        if (!data)
-        {
-            JDM_ERROR("Csv file was not provided");
-        }
-        if (!column)
-        {
-            JDM_ERROR("Column was not provided");
-        }
-        if (!p_idx)
-        {
-            JDM_ERROR("Output pointer was not provided");
-        }
-        res = JIO_RESULT_NULL_ARG;
-        goto end;
-    }
 
     const uintptr_t idx = column - data->columns;
     if (idx < data->column_count)
@@ -805,41 +610,16 @@ jio_result jio_csv_column_index(const jio_csv_data* data, const jio_csv_column* 
     }
     else
     {
-        JDM_ERROR("Column does not belong to the csv file");
         res = JIO_RESULT_BAD_PTR;
     }
 
-end:
-    JDM_LEAVE_FUNCTION;
     return res;
 }
 
 jio_result jio_process_csv_exact(
-        const jio_memory_file* mem_file, const char* separator, uint32_t column_count, const jio_string_segment* headers,
-        bool (** converter_array)(jio_string_segment*, void*), void** param_array, const jio_stack_allocator_callbacks* stack_callbacks)
+        const jio_context* ctx, const jio_memory_file* mem_file, const char* separator, uint32_t column_count,
+        const jio_string_segment* headers, bool (** converter_array)(jio_string_segment*, void*), void** param_array)
 {
-    JDM_ENTER_FUNCTION;
-    if (!mem_file || !stack_callbacks || !converter_array || !param_array)
-    {
-        if (!mem_file)
-        {
-            JDM_ERROR("Memory mapped file to parse was not provided");
-        }
-        if (!stack_callbacks)
-        {
-            JDM_ERROR("Linear allocator was not provided");
-        }
-        if (!converter_array)
-        {
-            JDM_ERROR("Converter array was not provided");
-        }
-        if (!param_array)
-        {
-            JDM_ERROR("Parameter array was not provided");
-        }
-        JDM_LEAVE_FUNCTION;
-        return JIO_RESULT_NULL_ARG;
-    }
     {
         bool converters_complete = true;
         for (uint32_t i = 0; i < column_count; ++i)
@@ -847,22 +627,20 @@ jio_result jio_process_csv_exact(
             if (converter_array[i] == NULL)
             {
                 converters_complete = false;
-                JDM_ERROR("Converter for column %u (%.*s) was not provided", i, (int)headers[i].len, headers[i].begin);
+                JIO_ERROR(ctx, "Converter for column %u (%.*s) was not provided", i, (int)headers[i].len, headers[i].begin);
             }
         }
         if (!converters_complete)
         {
-            JDM_LEAVE_FUNCTION;
             return JIO_RESULT_BAD_CONVERTER;
         }
     }
     jio_result res;
-    void* const base = stack_callbacks->save(stack_callbacks->param);
 
     //  Parse the first row
     const char* row_begin = mem_file->ptr;
     const char* row_end = strchr(row_begin, '\n');
-
+    jio_string_segment* segments = NULL;
     //  Count columns in the csv file
     size_t sep_len = strlen(separator);
     {
@@ -870,21 +648,21 @@ jio_result jio_process_csv_exact(
                 row_begin, row_end ? row_end : (const char*)mem_file->ptr + mem_file->file_size, separator, sep_len);
         if (real_column_count != column_count)
         {
-            JDM_ERROR("Csv file has %"PRIu32" columns, but %"PRIu32" were specified", real_column_count, column_count);
+            JIO_ERROR(ctx, "Csv file has %"PRIu32" columns, but %"PRIu32" were specified", real_column_count, column_count);
             res = JIO_RESULT_BAD_CSV_HEADER;
             goto end;
         }
     }
-    jio_string_segment* segments = stack_callbacks->alloc(stack_callbacks->param, sizeof(*segments) * column_count);
+    segments = jio_alloc_stack(ctx, sizeof(*segments) * column_count);
     if (!segments)
     {
         res = JIO_RESULT_BAD_ALLOC;
-        JDM_ERROR("Could not allocate memory for csv parsing");
+        JIO_ERROR(ctx, "Could not allocate memory for csv parsing");
         goto end;
     }
-    if ((res = extract_row_entries(column_count, row_begin, row_end, separator, sep_len, true, segments)) != JIO_RESULT_SUCCESS)
+    if ((res = extract_row_entries(NULL, column_count, row_begin, row_end, separator, sep_len, true, segments)) != JIO_RESULT_SUCCESS)
     {
-        JDM_ERROR("Failed extracting the headers from CSV file \"%s\", reason: %s", mem_file->name,
+        JIO_ERROR(ctx, "Failed extracting the headers from CSV file \"%s\", reason: %s", mem_file->name,
                   jio_result_to_str(res));
         goto end;
     }
@@ -892,7 +670,7 @@ jio_result jio_process_csv_exact(
     {
         if (!jio_string_segment_equal(segments + i, headers + i))
         {
-            JDM_ERROR("Column %u had a header \"%.*s\", but \"%.*s\" was expected", i + 1, (int)segments[i].len, segments[i].begin, (int)headers[i].len, headers[i].begin);
+            JIO_ERROR(ctx, "Column %u had a header \"%.*s\", but \"%.*s\" was expected", i + 1, (int)segments[i].len, segments[i].begin, (int)headers[i].len, headers[i].begin);
             goto end;
         }
     }
@@ -900,16 +678,16 @@ jio_result jio_process_csv_exact(
     uint32_t row_count = 0;
     while (row_end)
     {
-        if ((res = extract_row_entries(column_count, row_begin, row_end, separator, sep_len, true, segments)))
+        if ((res = extract_row_entries(NULL, column_count, row_begin, row_end, separator, sep_len, true, segments)))
         {
-            JDM_ERROR("Failed parsing row %u of CSV file \"%s\", reason: %s", row_count + 1, mem_file->name, jio_result_to_str(res));
+            JIO_ERROR(ctx, "Failed parsing row %u of CSV file \"%s\", reason: %s", row_count + 1, mem_file->name, jio_result_to_str(res));
             goto end;
         }
         for (uint32_t i = 0; row_count && i < column_count; ++i)
         {
             if (!converter_array[i](segments + i, param_array[i]))
             {
-                JDM_ERROR("Element %"PRIu32" in row %"PRIu32" could not be converted", i + 1, row_count + 1);
+                JIO_ERROR(ctx, "Element %"PRIu32" in row %"PRIu32" could not be converted", i + 1, row_count + 1);
                 res = JIO_RESULT_BAD_VALUE;
                 goto end;
             }
@@ -921,33 +699,15 @@ jio_result jio_process_csv_exact(
         row_end = strchr(row_end + 1, '\n');
     }
 
-    stack_callbacks->free(stack_callbacks->param, segments);
-    JDM_LEAVE_FUNCTION;
-    return JIO_RESULT_SUCCESS;
-    end:
-    stack_callbacks->restore(stack_callbacks->param, base);
-    JDM_LEAVE_FUNCTION;
+end:
+    jio_free_stack(ctx, segments);
     return res;
 }
 
 jio_result jio_csv_print_size(
         const jio_csv_data* const data, size_t* const p_size, const size_t separator_length, const uint32_t extra_padding, const bool same_width)
 {
-    JDM_ENTER_FUNCTION;
     jio_result res = JIO_RESULT_SUCCESS;
-    if (!data || !p_size)
-    {
-        if (!data)
-        {
-            JDM_ERROR("Csv file was not provided");
-        }
-        if (!p_size)
-        {
-            JDM_ERROR("Output file was not provided");
-        }
-        res = JIO_RESULT_NULL_ARG;
-        goto end;
-    }
 
 
     size_t total_chars = 0;
@@ -996,8 +756,6 @@ jio_result jio_csv_print_size(
 
     *p_size = total_chars + 1;
 
-end:
-    JDM_LEAVE_FUNCTION;
     return res;
 }
 
@@ -1025,25 +783,7 @@ jio_result jio_csv_print(
         const jio_csv_data* data, size_t* p_usage, char* restrict buffer, const char* separator, uint32_t extra_padding, bool same_width,
         bool align_left)
 {
-    JDM_ENTER_FUNCTION;
     jio_result res = JIO_RESULT_SUCCESS;
-    if (!data || !buffer || !separator)
-    {
-        if (!data)
-        {
-            JDM_ERROR("Csv file was not provided");
-        }
-        if (!buffer)
-        {
-            JDM_ERROR("Output buffer was not provided");
-        }
-        if (!separator)
-        {
-            JDM_ERROR("Separator was not provided");
-        }
-        res = JIO_RESULT_NULL_ARG;
-        goto end;
-    }
     size_t min_width = 0;
     if (same_width)
     {
@@ -1094,7 +834,5 @@ jio_result jio_csv_print(
         *p_usage = pos - buffer;
     }
 
-end:
-    JDM_LEAVE_FUNCTION;
     return res;
 }

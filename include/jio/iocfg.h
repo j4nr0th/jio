@@ -24,9 +24,8 @@ typedef struct jio_cfg_value_struct jio_cfg_value;
 typedef struct jio_cfg_array_struct jio_cfg_array;
 struct jio_cfg_array_struct
 {
-    jio_allocator_callbacks allocator_callbacks;
-    uint32_t capacity;
-    uint32_t count;
+    unsigned capacity;
+    unsigned count;
     jio_cfg_value* values;
 };
 
@@ -51,27 +50,16 @@ struct jio_cfg_element_struct
 };
 
 typedef struct jio_cfg_section_struct jio_cfg_section;
-struct jio_cfg_section_struct
-{
-    jio_allocator_callbacks allocator_callbacks;
-    jio_string_segment name;
-    uint32_t value_count;
-    uint32_t value_capacity;
-    jio_cfg_element* value_array;
-    uint32_t subsection_count;
-    uint32_t subsection_capacity;
-    jio_cfg_section** subsection_array;
-};
 
-jio_result jio_cfg_section_insert(jio_cfg_section* parent, jio_cfg_section* child);
+jio_result jio_cfg_section_insert(const jio_context* ctx, jio_cfg_section* parent, jio_cfg_section* child);
 
-jio_result jio_cfg_element_insert(jio_cfg_section* section, jio_cfg_element element);
+jio_result jio_cfg_element_insert(const jio_context* ctx, jio_cfg_section* section, jio_cfg_element element);
 
-jio_result jio_cfg_section_create(const jio_allocator_callbacks* allocator_callbacks, jio_string_segment name, jio_cfg_section** pp_out);
+jio_result jio_cfg_section_create(const jio_context* ctx, jio_string_segment name, jio_cfg_section** pp_out);
 
-jio_result jio_cfg_section_destroy(jio_cfg_section* section);
+void jio_cfg_section_destroy(const jio_context* ctx, jio_cfg_section* section);
 
-jio_result jio_cfg_parse(const jio_memory_file* mem_file, jio_cfg_section** pp_root_section, const jio_allocator_callbacks* allocator_callbacks);
+jio_result jio_cfg_parse(const jio_context* ctx, const jio_memory_file* mem_file, jio_cfg_section** pp_root_section);
 
 jio_result jio_cfg_get_value_by_key(const jio_cfg_section* section, const char* key, jio_cfg_value* p_value);
 
@@ -82,9 +70,14 @@ jio_result jio_cfg_get_subsection(const jio_cfg_section* section, const char* su
 jio_result jio_cfg_get_subsection_segment(
         const jio_cfg_section* section, jio_string_segment subsection_name, jio_cfg_section** pp_out);
 
-jio_result jio_cfg_print_size(const jio_cfg_section* restrict section, size_t delim_size, size_t* restrict p_size, bool indent_subsections, bool equalize_key_length_pad);
+size_t jio_cfg_print_size(
+        const jio_cfg_section* section, size_t delim_size, bool indent_subsections,
+        bool equalize_key_length_pad);
 
-jio_result jio_cfg_print(const jio_cfg_section* restrict section, char* restrict buffer, const char* restrict delimiter, size_t* restrict p_real_size, bool indent_subsections, bool equalize_key_length_pad, bool pad_left);
+size_t
+jio_cfg_print(
+        const jio_cfg_section* section, char* buffer, const char* delimiter, bool indent_subsections,
+        bool equalize_key_length_pad, bool pad_left);
 
 const char* jio_cfg_type_to_str(jio_cfg_type type);
 
