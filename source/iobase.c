@@ -172,97 +172,6 @@ end:
 }
 
 
-#else
-
-void* file_to_memory(const char* filename, size_t* p_out_size)
-{
-    RMOD_ENTER_FUNCTION;
-    void* ptr = NULL;
-    FILE* fd = fopen(filename, "r");
-    if (!fd)
-    {
-        RMOD_ERROR_CRIT("Could not open file \"%s\", reason: %s", filename, RMOD_ERRNO_MESSAGE);
-        goto end;
-    }
-    fseek(fd, 0, SEEK_END);
-    size_t size = ftell(fd) + 1;
-    ptr = jalloc(size);
-    fseek(fd, 0, SEEK_SET);
-    if (ptr)
-    {
-        size_t v = fread(ptr, 1, size, fd);
-        if (ferror(fd))
-        {
-            RMOD_ERROR("Failed calling fread on file \"%s\", reason: %s", filename, RMOD_ERRNO_MESSAGE);
-            fclose(fd);
-            goto end;
-        }
-        *p_out_size = v;
-    }
-    fclose(fd);
-
-end:
-    RMOD_LEAVE_FUNCTION;
-    return ptr;
-}
-
-void unmap_file(void* ptr, size_t size)
-{
-    RMOD_ENTER_FUNCTION;
-    (void)size;
-    jfree(ptr);
-    RMOD_LEAVE_FUNCTION;
-}
-static void file_from_memory(void* ptr, size_t size)
-{
-    RMOD_ENTER_FUNCTION;
-    jfree(ptr);
-    (void)size;
-    RMOD_LEAVE_FUNCTION;
-}
-
-
-bool map_file_is_named(const jio_memory_file* f1, const char* filename)
-{
-    RMOD_ENTER_FUNCTION;
-    const bool res = strcmp(f1->name, filename) != 0;
-    RMOD_LEAVE_FUNCTION;
-    return res;
-}
-
-
-
-rmod_result rmod_map_file_to_memory(const char* filename, jio_memory_file* p_file_out)
-{
-    RMOD_ENTER_FUNCTION;
-    rmod_result res = RMOD_RESULT_SUCCESS;
-    if (!GetFullPathNameA(filename, sizeof(p_file_out->name), p_file_out->name, NULL))
-    {
-        RMOD_ERROR("Could not find full path of file \"%s\", reason: %s", filename, RMOD_ERRNO_MESSAGE);
-        res = RMOD_RESULT_BAD_PATH;
-        goto end;
-    }
-
-    size_t size;
-    void* ptr = file_to_memory(filename, &size);
-    if (!ptr)
-    {
-        RMOD_ERROR("Failed mapping file to memory");
-        res = RMOD_RESULT_BAD_FILE_MAP;
-        goto end;
-    }
-
-    p_file_out->ptr = ptr;
-    p_file_out->file_size = size;
-    end:
-    RMOD_LEAVE_FUNCTION;
-    return res;
-}
-
-
-#endif
-
-
 void jio_memory_file_destroy(jio_memory_file* mem_file)
 {
     file_from_memory(mem_file->ctx, mem_file->ptr, mem_file->file_size);
@@ -284,10 +193,150 @@ jio_result jio_memory_file_sync(const jio_memory_file* file, int sync)
     return res;
 }
 
+#else
+
+#include <stdio.h>
+#include <string.h>
+
+bool map_file_is_named(const jio_memory_file* f1, const char* filename)
+{
+    const bool res = strcmp(f1->name, filename) != 0;
+    return res;
+}
+
+
+jio_result jio_memory_file_create(
+        const jio_context* ctx, const char* filename, jio_memory_file** p_file_out, int write, int can_create,
+        size_t size)
+{
+    HANDLE file_handle = CreateFileA(
+            filename,
+            GENERIC_READ | (write ? GENERIC_WRITE : 0),
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            NULL,
+            can_create ? OPEN_ALWAYS : OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL
+                                    );
+    if (file_handle == INVALID_HANDLE_VALUE)
+    {
+        JIO_ERROR(ctx, "Could not get Win32 handle to file \"%s\"", filename);
+        return JIO_RESULT_BAD_PATH;
+    }
+    const BOOL was_not_created = !can_create || GetLastError() == ERROR_ALREADY_EXISTS;
+    DWORD map_size_lo = 0, map_size_hi = 0;
+
+    BY_HANDLE_FILE_INFORMATION file_info;
+
+    ULARGE_INTEGER li;
+    if (was_not_created)
+    {
+        if (!GetFileInformationByHandle(file_handle, &file_info))
+        {
+            JIO_ERROR(ctx, "Could not retrieve Win32 file information by GetFileInformationByHandle");
+            CloseHandle(file_handle);
+            return JIO_RESULT_BAD_WINDOWS;
+        }
+        if (size == 0)
+        {
+            map_size_lo = file_info.nFileSizeLow;
+            map_size_hi = file_info.nFileSizeHigh;
+            li.LowPart = map_size_lo;
+            li.HighPart = map_size_hi;
+        }
+        else
+        {
+            li.QuadPart = size;
+            map_size_lo = li.LowPart;
+            map_size_hi = li.HighPart;
+        }
+    }
+    else
+    {
+        li.QuadPart = size;
+        map_size_lo = li.LowPart;
+        map_size_hi = li.HighPart;
+    }
+
+
+    HANDLE view_handle = CreateFileMappingA(
+            file_handle,
+            NULL,
+            write ? PAGE_READWRITE : PAGE_READONLY,
+            map_size_hi,
+            map_size_lo,
+            NULL);
+    if (view_handle == INVALID_HANDLE_VALUE)
+    {
+        JIO_ERROR(ctx, "Could not create Win32 file mapping for file \"%s\"", filename);
+        CloseHandle(file_handle);
+        return JIO_RESULT_BAD_MAP;
+    }
+
+    LPVOID mapping_ptr = MapViewOfFile(view_handle, write ? FILE_MAP_ALL_ACCESS : FILE_MAP_READ, 0, 0, 0);
+    if (!mapping_ptr)
+    {
+        JIO_ERROR(ctx, "Could not map Win32 file view to memory for file \"%s\"", filename);
+        CloseHandle(view_handle);
+        CloseHandle(file_handle);
+        return JIO_RESULT_BAD_MAP;
+    }
+
+    jio_memory_file* const this = jio_alloc(ctx, sizeof(*this));
+    if (!this)
+    {
+        JIO_ERROR(ctx, "Could not allocate memory for the memory file");
+        CloseHandle(view_handle);
+        CloseHandle(file_handle);
+        return JIO_RESULT_BAD_ALLOC;
+    }
+
+    this->ptr = mapping_ptr;
+    this->file_size = size ? size : li.QuadPart;
+    this->ctx = ctx;
+    if (!GetFinalPathNameByHandleA(file_handle, this->name, sizeof(this->name), VOLUME_NAME_DOS))
+    {
+        this->name[0] = 0;
+        JIO_ERROR(ctx, "Could not get full file path from GetFinalPathNameByHandleA");
+    }
+    this->can_write = write;
+    this->view_handle = view_handle;
+    this->file_handle = file_handle;
+
+    *p_file_out = this;
+
+    return JIO_RESULT_SUCCESS;
+}
+
+
+jio_result jio_memory_file_sync(const jio_memory_file* file, int sync)
+{
+    (void) sync;
+    if (!FlushViewOfFile(file->ptr, file->file_size))
+    {
+        JIO_ERROR(file->ctx, "Could not flush %zu bytes of file \"%s\"", file->file_size, file->name);
+    }
+    return JIO_RESULT_SUCCESS;
+}
+
+void jio_memory_file_destroy(jio_memory_file* mem_file)
+{
+    const jio_context* ctx = mem_file->ctx;
+
+    (void) UnmapViewOfFile(mem_file->ptr);
+    (void) CloseHandle(mem_file->view_handle);
+    (void) CloseHandle(mem_file->file_handle);
+
+    jio_free(ctx, mem_file);
+}
+
+#endif
+
+
 unsigned jio_memory_file_count_lines(const jio_memory_file* file)
 {
     unsigned count = 1;
-    for (const char* ptr = file->ptr; ptr; ptr = memchr(ptr, '\n', file->file_size - (ptr - (const char*)file->ptr)))
+    for (const char* ptr = file->ptr; ptr; ptr = memchr(ptr, '\n', file->file_size - (ptr - (const char*) file->ptr)))
     {
         count += 1;
         ptr += 1;
@@ -300,7 +349,7 @@ unsigned jio_memory_file_count_non_empty_lines(const jio_memory_file* file)
 {
     unsigned count = 1;
     const char* ptr = file->ptr;
-    const char* const end = (const char*)file->ptr + file->file_size;
+    const char* const end = (const char*) file->ptr + file->file_size;
     for (;;)
     {
         const char* next = memchr(ptr, '\n', end - ptr);
@@ -375,10 +424,10 @@ jio_memory_file_info jio_memory_file_get_info(const jio_memory_file* file)
 {
     const jio_memory_file_info result =
             {
-            .size = file->file_size,
-            .memory = file->ptr,
-            .can_write = file->can_write,
-            .full_name = file->name,
+                    .size = file->file_size,
+                    .memory = file->ptr,
+                    .can_write = file->can_write,
+                    .full_name = file->name,
             };
     return result;
 }

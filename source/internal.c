@@ -9,6 +9,10 @@
 #include <assert.h>
 #include "internal.h"
 
+#ifdef _WIN32
+    #define strncasecmp(first, second, n) _strnicmp((first), (second), (n))
+#endif
+
 bool jio_string_segment_equal(const jio_string_segment* first, const jio_string_segment* second)
 {
     return first->len == second->len && (memcmp(first->begin, second->begin, first->len) == 0);

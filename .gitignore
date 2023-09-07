@@ -1,3 +1,6 @@
 cmake-*/
 .idea/
 .vscode/
+.vs/
+out/
+_ReSharper.Caches/

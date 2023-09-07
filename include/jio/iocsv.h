@@ -9,15 +9,15 @@
 #include <stdint.h>
 #include <stddef.h>
 
-typedef struct jio_csv_column_struct jio_csv_column;
-struct jio_csv_column_struct
+typedef struct jio_csv_column_T jio_csv_column;
+struct jio_csv_column_T
 {
     jio_string_segment header;      //  Optional header
     unsigned count;                   //  How many elements are used
     unsigned capacity;                //  How many elements there is space for
     jio_string_segment* elements;   //  Element array
 };
-typedef struct jio_csv_data_struct jio_csv_data;
+typedef struct jio_csv_data_T jio_csv_data;
 
 jio_result jio_csv_column_index(const jio_csv_data* data, const jio_csv_column* column, uint32_t* p_idx);
 

@@ -5,13 +5,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-
-#ifndef NDEBUG
-#define DBG_STOP __builtin_trap()
-#else
-#define DBG_STOP (void)0;
-#endif
-#define ASSERT(x) if (!(x)) {fputs("Failed assertion \"" #x "\"\n", stderr); DBG_STOP; exit(EXIT_FAILURE);} (void)0
+#include "../test_common.h"
 
 
 static inline void print_csv(const jio_csv_data* data)

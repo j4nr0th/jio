@@ -9,7 +9,7 @@
 #include "internal.h"
 
 
-struct jio_csv_data_struct
+struct jio_csv_data_T
 {
     uint32_t column_capacity;               //  Max size of columns before resizing the array
     uint32_t column_count;                  //  Number of columns used

@@ -6,7 +6,7 @@
 #include <assert.h>
 #include <stdio.h>
 
-struct jio_cfg_section_struct
+struct jio_cfg_section_T
 {
     jio_string_segment name;
     unsigned value_count;
@@ -379,7 +379,11 @@ jio_result jio_cfg_parse(const jio_context* ctx, const jio_memory_file* mem_file
             //  Check what is after the name_end
             row_begin = name_end + 1;
             while (*row_begin != '\n' && jio_iswhitespace(*row_begin) && row_begin != row_end){ ++row_begin; }
+#ifndef _WIN32
             if (*row_begin != '\n' && *row_begin != '#' && *row_begin != ';')
+#else
+            if ((*row_begin != '\n' && *row_begin != '\r') && *row_begin != '#' && *row_begin != ';')
+#endif
             {
                 JIO_ERROR(ctx, "Line %u contains a section name, but also contains other non-comment contents", line_count);
                 res = JIO_RESULT_BAD_CFG_FORMAT;
@@ -637,7 +641,7 @@ static size_t print_section(
 {
     const size_t pad_space = level * 4;
     char* pos = buffer;
-    jio_string_segment section_name;
+    jio_string_segment section_name = {.begin = NULL, .len = 0};
     if (level > 0)
     {
         //  Print section name
@@ -791,7 +795,7 @@ static size_t size_section(const jio_string_segment parent_name, const uint32_t 
 {
     const size_t pad_space = level * 4;
     size_t pos = 0;
-    jio_string_segment section_name;
+    jio_string_segment section_name = {.begin = NULL, .len = 0};
     if (level > 0)
     {
         //  Print section name
@@ -883,4 +887,9 @@ const char* jio_cfg_type_to_str(jio_cfg_type type)
         return type_names_array[type];
     }
     return "Unknown";
+}
+
+jio_string_segment jio_cfg_section_get_name(const jio_cfg_section* section)
+{
+    return section->name;
 }

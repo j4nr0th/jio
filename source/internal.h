@@ -6,6 +6,10 @@
 #define JIO_INTERNAL_H
 #include "../include/jio/iobase.h"
 
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
 
 struct jio_memory_file_T
 {
@@ -16,6 +20,8 @@ struct jio_memory_file_T
 #ifndef _WIN32
     char name[PATH_MAX];
 #else
+    HANDLE view_handle;
+    HANDLE file_handle;
     char name[4096];
 #endif
 };
@@ -44,8 +50,14 @@ void jio_free_stack(const jio_context* ctx, void* ptr);
 __attribute__((format(printf, 2, 6)))
 #endif
 void jio_error_report(const jio_context* ctx, const char* fmt, const char* file, int line, const char* function, ...);
-#define JIO_ERROR(ctx, fmt, ...) jio_error_report((ctx), (fmt), __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
-#define JIO_ERROR_FN(ctx, fmt, fn, ...) jio_error_report((ctx), (fmt), __FILE__, __LINE__, (fn) __VA_OPT__(,) __VA_ARGS__)
+
+#ifndef _WIN32
+    #define JIO_ERROR(ctx, fmt, ...) jio_error_report((ctx), (fmt), __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
+    #define JIO_ERROR_FN(ctx, fmt, fn, ...) jio_error_report((ctx), (fmt), __FILE__, __LINE__, (fn) __VA_OPT__(,) __VA_ARGS__)
+#else
+    #define JIO_ERROR(ctx, fmt, ...) jio_error_report((ctx), (fmt), __FILE__, __LINE__, __func__, __VA_ARGS__)
+    #define JIO_ERROR_FN(ctx, fmt, fn, ...) jio_error_report((ctx), (fmt), __FILE__, __LINE__, (fn) , __VA_ARGS__)
+#endif
 
 bool jio_string_segment_equal(const jio_string_segment* first, const jio_string_segment* second);
 
