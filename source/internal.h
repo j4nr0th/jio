@@ -69,8 +69,4 @@ bool jio_string_segment_equal_str_case(const jio_string_segment* first, const ch
 
 bool jio_iswhitespace(unsigned c);
 
-extern const jio_allocator_callbacks DEFAULT_ALLOCATOR_CALLBACKS;
-
-extern const jio_error_callbacks DEFAULT_ERROR_CALLBACKS;
-
 #endif //JIO_INTERNAL_H
