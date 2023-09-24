@@ -52,7 +52,7 @@ void* jio_realloc(const jio_context* ctx, void* ptr, size_t new_size)
 
 void jio_free(const jio_context* ctx, void* ptr)
 {
-    ctx->stack_allocator_callbacks.free(ctx->stack_allocator_callbacks.param, ptr);
+    ctx->allocator_callbacks.free(ctx->allocator_callbacks.param, ptr);
 }
 
 void* jio_alloc_stack(const jio_context* ctx, size_t size)
