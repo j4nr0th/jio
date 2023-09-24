@@ -48,7 +48,7 @@ int main()
     jio_memory_file_sync(f_out, 1);
     jio_memory_file_destroy(f_out);
 
-    jio_cfg_section_destroy(ctx, root);
+    jio_cfg_section_destroy(ctx, root, 1);
     jio_memory_file_destroy(cfg_file);
 
     jio_context_destroy(ctx);
