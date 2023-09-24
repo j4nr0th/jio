@@ -57,7 +57,7 @@ jio_result jio_cfg_element_insert(const jio_context* ctx, jio_cfg_section* secti
 
 jio_result jio_cfg_section_create(const jio_context* ctx, jio_string_segment name, jio_cfg_section** pp_out);
 
-void jio_cfg_section_destroy(const jio_context* ctx, jio_cfg_section* section);
+void jio_cfg_section_destroy(const jio_context* ctx, jio_cfg_section* section, bool free_contents);
 
 jio_result jio_cfg_parse(const jio_context* ctx, const jio_memory_file* mem_file, jio_cfg_section** pp_root_section);
 
