@@ -451,15 +451,15 @@ jio_result jio_cfg_parse(const jio_context* ctx, const jio_memory_file* mem_file
     return JIO_RESULT_SUCCESS;
 
 failed:
-    jio_cfg_section_destroy(ctx, root);
+    jio_cfg_section_destroy(ctx, root, 1);
     return res;
 }
 
-void jio_cfg_section_destroy(const jio_context* ctx, jio_cfg_section* section)
+void jio_cfg_section_destroy(const jio_context* ctx, jio_cfg_section* section, bool free_contents)
 {
     for (uint32_t i = 0; i < section->value_count; ++i)
     {
-        if (section->value_array[i].value.type == JIO_CFG_TYPE_ARRAY)
+        if (section->value_array[i].value.type == JIO_CFG_TYPE_ARRAY && free_contents)
         {
             destroy_array(ctx, &section->value_array[i].value.value.value_array);
         }
@@ -468,7 +468,7 @@ void jio_cfg_section_destroy(const jio_context* ctx, jio_cfg_section* section)
     section->value_array = (void*)-1;
     for (uint32_t i = 0; i < section->subsection_count; ++i)
     {
-        jio_cfg_section_destroy(ctx, section->subsection_array[i]);
+        jio_cfg_section_destroy(ctx, section->subsection_array[i], free_contents);
     }
     jio_free(ctx, section->subsection_array);
     section->subsection_array = (void*)-1;
